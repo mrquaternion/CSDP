@@ -6,6 +6,16 @@
 > This version removes runtime prompts and focuses on fully automated workflows.  
 > If you’re looking for the latest features and improvements, please check out that branch.
 
+## Install
+The `carbonpipeline` package can be installed in the following way:
+
+1. Clone the repository on your computer
+2. Navigate to the root of the project
+3. Create a virtual environment and activate it
+4. Make sure your CDS API credentials are set up in `~/.cdsapirc`, otherwise follow this instruction https://arc.net/l/quote/ilmawrkf
+5. Finally, enter the command pip install -e . in your CLI
+6. Use carbonpipeline --help for more info!
+
 ## Core workflow
 **1. Prepare configuration**
 - Create a YAML file (please use the same structure as in the repo, `download_config.yaml`) describing [the date range, target predictors, geographic footprint, aggregation level, and an optional field name to label features](#opts).
