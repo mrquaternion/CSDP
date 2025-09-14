@@ -1,10 +1,8 @@
 # download_config.yaml
 action: download
-output-filename: null           # do not touch
-data-file: null                 # do not touch
 coords-dir: geojsons            # directory of JSON files | nothing
-start: 2022-01-01T00:00:00      # format: YYYY-MM-DDTHH:MM:SS
+start: 2024-12-01T00:00:00      # format: YYYY-MM-DDTHH:MM:SS
 end: 2024-12-31T23:00:00        # format: YYYY-MM-DDTHH:MM:SS
 preds: [TA, PA, P, WS, WD, USTAR, NETRAD, SW_IN, SW_IN_POT, SW_OUT, LW_IN, LW_OUT, LE, G, H, VPD, RH, CO2] # AmeriFlux predictors | nothing
 aggregation-type: MONTHLY       # DAILY | MONTHLY | nothing
-id-field: GID                   # Identifier field | nothing
+id-field:                    # Identifier field | nothing
