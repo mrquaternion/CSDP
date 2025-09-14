@@ -360,7 +360,7 @@ class DatasetManager:
             agg_ds["valid_time"] = agg_ds["valid_time"].to_index().to_period("M")
 
         # save dataset
-        save_path = self._write_aggregated_ds(
+        save_path = self.write_aggregated_ds(
             agg_ds=agg_ds,
             output_name=f"{output_name}_{rid}",
             aggregation_type=aggregation_type,
@@ -368,7 +368,7 @@ class DatasetManager:
         )
         return rid, save_path
 
-    def _write_aggregated_ds(
+    def write_aggregated_ds(
         self,
         agg_ds: xr.Dataset,
         output_name: str,

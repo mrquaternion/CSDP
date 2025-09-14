@@ -151,6 +151,9 @@ class CarbonPipeline:
                 resample_methods
             )
             print(f"✅ Aggregation done for {len(save_paths)} regions", flush=True)
+        else:
+            self.dataset_manager.write_aggregated_ds(region_dsets, output_name, "", False)
+
 
     def run_point_process(
         self,
