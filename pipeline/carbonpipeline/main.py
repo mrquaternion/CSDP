@@ -47,9 +47,8 @@ class SpecialPredictors:
 
 class ProcessingType(Enum):
     GLOBAL = "Global"
-    POLYGONS = "IndividualPolygons"
-    BOX = "BoundingBox"
-    ECSTATION = "ECStation"
+    BOX = "Box"
+    SITE = "Site"
 
 
 class CommandExecutor:
@@ -82,9 +81,10 @@ class CommandExecutor:
         if coords_file is None:
             return None
 
-        if not os.path.exists(coords_file):
+        path = Path(coords_file)
+        if not os.path.exists(path):
             raise FileNotFoundError(f"coords_file path does not exist: {coords_file}")
-        if not os.path.isdir(coords_file):
+        if not os.path.isdir(path):
             raise NotADirectoryError(f"coords_file is not a directory: {coords_file}")
 
         return coords_file
@@ -143,27 +143,27 @@ class CommandExecutor:
             await asyncio.gather(*global_tasks)
 
         # Download ERA5 data sequentially for each region (to avoid CDS conflicts)
-        if self.processing_type == ProcessingType.ECSTATION:
+        if self.processing_type == ProcessingType.SITE:
             gapfilling = await self._ask_gapfill()
-
-            for geometry_idx, id in enumerate(self.all_geometries):
-                geometry = self.all_geometries[id]
+            for i, geometry_idx in enumerate(self.all_geometries):
+                geometry = self.all_geometries[geometry_idx]
                 region = geometry.rect_region
-                region_id = CommandExecutor._generate_region_id(region, geometry_idx)
+                region_id = CommandExecutor._generate_region_id(region, i)
                 await self._download_for_stations(geometry, region, region_id, gapfilling)
         elif self.processing_type == ProcessingType.BOX:
             for geometry_idx, geometry in enumerate(self.bounding_boxes_geometry):
                 region = geometry.rect_region
                 region_id = CommandExecutor._generate_region_id(region, geometry_idx)
                 await self._download_for_region(geometry, region, region_id, self.bounding_boxes_geometry[geometry])
-        else:
+        elif self.processing_type == ProcessingType.GLOBAL:
             for geometry_idx, gid in enumerate(self.all_geometries):
                 geometry = self.all_geometries[gid]
                 region = geometry.rect_region
                 region_id = CommandExecutor._generate_region_id(region, geometry_idx)
                 await self._download_for_region(geometry, region, region_id, {gid: region})
 
-    async def _ask_gapfill(self) -> bool:
+    @staticmethod
+    async def _ask_gapfill() -> bool:
         while True:
             ans = (await asyncio.to_thread(
                 input, "\nDo you want to gap-fill the dataset in input? (Y/n): "
@@ -295,7 +295,7 @@ class CommandExecutor:
                 geometry.validate_coordinates()
                 geometry.rect_region = GeometryProcessor.process_geometry(geometry)
                 self.all_geometries = {0: geometry}
-                self.processing_type = ProcessingType.ECSTATION
+                self.processing_type = ProcessingType.SITE
             # Default
             elif self.coords_dir is None and self.data_file is None:
                 global_earth_bounding_box = [90, -180, -90, 180]
@@ -307,48 +307,17 @@ class CommandExecutor:
             elif self.coords_dir is not None and self.data_file is None:
                 self.all_geometries = self._parse_geojsons()
 
-                number_of_polygons = len(self.all_geometries)
                 for _, geometry in self.all_geometries.items():
                     geometry.rect_region = GeometryProcessor.process_geometry(geometry)
 
-                total_requests_polygons = number_of_polygons * self.number_requests_per_region
-                total_requests_box = self.number_requests_per_region
+                geometry = Geometry()
+                geometry.rect_region = self._find_covering_regions(list(self.all_geometries.values()))
+                self.bounding_boxes_geometry[geometry] = {
+                    id_geo: geo.rect_region
+                    for id_geo, geo in self.all_geometries.items()
+                }
+                self.processing_type = ProcessingType.BOX  # let know the pipeline to download in the manifest
 
-                print("\n--------------------------------------------")
-                print("You have two options for ERA5 extraction:\n")
-                print("1) Merge all polygons into a single global covering region (Y)")
-                print("   - Output: one single NetCDF file (smaller storage footprint).")
-                print(f"   - Fewer requests to ERA5 (only {total_requests_box} requests).")
-                print("   - Faster to download, less risk of exceeding your CDS requests quota.")
-                print("   - Downside: for large polygons, precision is reduced because only")
-                print("     the bounding box corners are kept.")
-                print()
-                print("2) Keep polygons separately (n)")
-                print("   - Output: one NetCDF file per polygon (may take more storage space).")
-                print("   - More precise: all ERA5 data points inside the polygon are retained, no need")
-                print("     for post-interpolation if you need exact coverage (this is of course for large polygons).")
-                print(f"   - Downside: More requests ({total_requests_polygons} requests), so downloads will take longer")
-                print("     and you may need to clear requests on CDS.")
-                print("--------------------------------------------")
-
-                while True:
-                    user_input = input(
-                        "\nDo you want to merge all polygons into a single bounding-box region? (Y/n): ").strip()
-
-                    if user_input.upper() == "Y":
-                        geometry = Geometry()
-                        geometry.rect_region = self._find_covering_regions(list(self.all_geometries.values()))
-                        self.bounding_boxes_geometry[geometry] = {
-                            id_geo: geo.rect_region
-                            for id_geo, geo in self.all_geometries.items()
-                        }
-                        self.processing_type = ProcessingType.BOX  # let know the pipeline to download in the manifest
-                        break
-                    elif user_input.lower() == "n":
-                        self.processing_type = ProcessingType.POLYGONS
-                        break
-                    else:
-                        print("Invalid input: please enter 'Y' for merged bounding box, or 'n' for polygons.")
 
     @staticmethod
     def _parse_datetime(value):

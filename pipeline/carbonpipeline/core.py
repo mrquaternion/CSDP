@@ -17,7 +17,6 @@ from .config import CarbonPipelineConfig
 from .Processing.processor import DataProcessor
 from .downloader import DataDownloader
 from .dataset import DatasetManager
-from .Processing.processing_utils import AGG_SCHEMA
 
 
 class CarbonPipeline:
@@ -49,6 +48,7 @@ class CarbonPipeline:
         if pd.isna(start_adj) or pd.isna(end_adj):
             raise ValueError(f"Invalid dates: start={start}, end={end}")
 
+        # Check if the dates are within the time range
         self.processor.check_data_file_time_range(data_file, start, end)
 
         groups = self.processor.get_request_groups(start_adj, end_adj, False)
@@ -194,7 +194,7 @@ class CarbonPipeline:
             print("➕ Adding WTD column...")
             merged_ds = self.dataset_manager.add_wtd_column(merged_ds, ds_wtd)
 
-        if processing_type == "BoundingBox":
+        if processing_type == "Box":
             all_dss = self.dataset_manager.filter_coordinates(ds=merged_ds, regions=rect_regions)
         else:
             merged_df = merged_ds.to_dataframe().reset_index()
@@ -215,7 +215,7 @@ class CarbonPipeline:
 
         # Aggregation --> not available for global option because too much data --> not optimized with chunk loading
         resample_methods = {"DAILY": "1D", "MONTHLY": "1ME"}
-        if aggregation_type in resample_methods.keys():
+        if aggregation_type in resample_methods.keys(): # AGGREGATION
             while True:
                 user_input = input("\nDo you want to delete the original files after aggregation? (Y/n): ").strip()
                 if user_input.upper() == "Y":
@@ -227,34 +227,12 @@ class CarbonPipeline:
                 else:
                     print("Invalid input: please enter 'Y' to delete them, or 'n' to keep them.")
 
-            for rid, ds in region_dsets.items():
-                variables = list(ds.data_vars.keys())
-                filtered_agg_schema = {key: AGG_SCHEMA[key] for key in variables if key in AGG_SCHEMA}
-
-                agg_ds = xr.Dataset({
-                    name: getattr(
-                        ds[pred].resample(valid_time=resample_methods[aggregation_type]),
-                        func
-                    )()
-                    for pred, agg_types in filtered_agg_schema.items()
-                    for agg_dict in [agg_types.get(aggregation_type.lower(), {})]
-                    if agg_dict != "DROP"
-                    for name, func in agg_dict.items()
-                })
-
-                if aggregation_type == "MONTHLY":
-                    agg_ds["valid_time"] = agg_ds["valid_time"].to_index().to_period("M")
-
-                print(f"✅ Aggregation done for region {rid}")
-
-                save_path = self.write_aggregated_ds(
-                    agg_ds=agg_ds,
-                    output_name=f"{output_name}_{rid}",
-                    aggregation_type=aggregation_type,
-                    delete_source=delete_source
-                )
-
-                print(f"✅ Aggregation saved to {save_path}")
+            self.dataset_manager.aggregate_dataset(region_dsets, resample_methods, aggregation_type, output_name, delete_source)
+        else: # NO AGGREGATION
+            for idx, ds in region_dsets.items():
+                name = "_".join([output_name, idx])
+                save_path = self.dataset_manager.save_netcdf(ds, name)
+                print(f"✅ File saved to {save_path}")
 
     def run_point_process(
         self,
@@ -270,12 +248,17 @@ class CarbonPipeline:
         """
         Post-processes downloaded data for a single point.
         """
-        df_og = self.processor.load_and_filter_dataframe(data_file, start, end)
-                
+        df_og, inds = self.processor.load_and_filter_dataframe(data_file, start, end)
+
         dsm = self.dataset_manager.apply_column_rename(merged_ds)
-        dfm = (dsm.to_dataframe()
+        # The ndarray `era5_values` must be equal length of the dataframe `dfr`
+        # Downloading
+        dfm = (
+            dsm.to_dataframe()
                .droplevel("latitude")
                .droplevel("longitude")
+               .groupby("valid_time")
+               .mean(numeric_only=True)
         )
 
         if gapfilling:
@@ -284,7 +267,7 @@ class CarbonPipeline:
                 if pred in dfr.columns.get_level_values('variable'):
                     era5_values = self.processor.convert_ameriflux_to_era5(dfm, pred)
                     dfr.loc[:, (pred, "ERA5")] = era5_values
-
+            
             cand = ("timestamp", "AMF")
             if cand in dfr.columns:
                 ts = pd.to_datetime(dfr.pop(cand), errors="coerce")
@@ -292,12 +275,12 @@ class CarbonPipeline:
                 dfr = dfr.set_index("timestamp")  # make it the index
             dfr = dfr.drop(columns=["year", "month", "day", "time"])
 
-            self.dataset_manager.save_output(dfr, output_name)
+            self.dataset_manager.save_csv(dfr, output_name)
         else:
             dsm = dsm.drop_vars(["year_month", "lat", "lon"])
 
             output_name = f"{output_name}_{region_id}"
-            save_path = self.write_aggregated_ds(dsm, output_name)
+            save_path = self.dataset_manager.save_netcdf(dsm, output_name)
             print(f"✅ File saved to {save_path}")
 
     def load_features_from_manifest(self):
@@ -321,52 +304,6 @@ class CarbonPipeline:
             region_id = Path(f).stem.split("_")[-1]  # ex: output_name_region_1 -> "1"
             dsets[region_id] = xr.open_dataset(f, decode_times=True).load()
         return dsets
-
-    def write_aggregated_ds(
-        self,
-        agg_ds: xr.Dataset,
-        output_name: str,
-        aggregation_type: str | None = None,
-        delete_source: bool | None = None,
-    ) -> Path:
-        if aggregation_type:
-            filename = f"{output_name}_{aggregation_type.lower()}.nc"
-        else:
-            filename = f"{output_name}.nc"
-
-        path = Path(self.config.OUTPUT_PROCESSED_DIR) / filename
-        path.parent.mkdir(parents=True, exist_ok=True)
-
-        # Overwrite if exists
-        if path.exists():
-            print(f"⚠️ Overwriting existing aggregated file: {path}")
-            path.unlink()
-
-        # Ensure valid_time is datetime64[ns]
-        if "valid_time" in agg_ds.coords:
-            agg_ds = agg_ds.assign_coords(
-                valid_time=("valid_time", np.array(agg_ds["valid_time"].values, dtype="datetime64[ns]"))
-            )
-
-        # Encoding: compress + use float32 instead of float64 where possible
-        encoding = {}
-        for v in agg_ds.data_vars:
-            enc = {"zlib": True, "complevel": 4}
-            if str(agg_ds[v].dtype).startswith("float64"):
-                enc["dtype"] = np.float32
-            encoding[v] = enc
-
-        agg_ds.to_netcdf(path, encoding=encoding, engine="netcdf4")
-
-        # Handle None for delete_source (only act if explicitly True)
-        if delete_source:
-            src = Path(self.config.OUTPUT_PROCESSED_DIR) / f"{output_name}.nc"
-            try:
-                src.unlink()
-            except FileNotFoundError:
-                pass
-
-        return path
 
     @staticmethod
     def setup_manifest_and_dirs(manifest, *dirs) -> None:

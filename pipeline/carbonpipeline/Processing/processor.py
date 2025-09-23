@@ -14,8 +14,9 @@ class DataProcessor:
     
     def __init__(self, config: CarbonPipelineConfig):
         self.config = config
-    
-    def convert_ameriflux_to_era5(self, df: pd.DataFrame, pred: str) -> np.ndarray:
+
+    @staticmethod
+    def convert_ameriflux_to_era5(df: pd.DataFrame, pred: str) -> np.ndarray:
         """
         Converts AmeriFlux DataFrame columns to ERA5 predictor values.
 
@@ -44,10 +45,27 @@ class DataProcessor:
         if func is None:
             return arr[:, 0]
         return func(*[arr[:, i] for i in range(arr.shape[1])])
+        
     
     def load_and_filter_dataframe(self, path: str, start: str, end: str) -> pd.DataFrame:
         """Load and filter dataframe based on time range."""
-        df = pd.read_csv(path, on_bad_lines='skip') # Added to handle potential bad lines
+
+        df = pd.read_csv(path, on_bad_lines='skip') 
+
+        # Datetime conversion 
+        df["timestamp"] = df["timestamp"].apply(self._validate_date_format).pipe(pd.to_datetime)         
+
+        # Filter to the hour
+        df = df[(df["timestamp"].dt.minute == 0) & (df["timestamp"].dt.second == 0)]
+
+        # Temporal clamp
+        start_ts, end_ts = pd.to_datetime(start), pd.to_datetime(end)
+        filtered_df = df[df["timestamp"].between(start_ts, end_ts)].copy()  
+
+        return self._find_missing_rows(filtered_df), (1,2)
+    
+    def check_data_file_time_range(self, path: str, start: str, end: str):
+        df = pd.read_csv(path, on_bad_lines='skip') 
         df["timestamp"] = df["timestamp"].apply(self._validate_date_format).pipe(pd.to_datetime)         
         df = df[(df["timestamp"].dt.minute == 0) & (df["timestamp"].dt.second == 0)]
 
@@ -58,9 +76,6 @@ class DataProcessor:
             msg = (f"The requested interval [{start_ts} -> {end_ts}] "
                    f"is out of bound for the given CSV file [{min_ts} -> {max_ts}].")
             raise ValueError(msg)
-        
-        filtered_df = df[df["timestamp"].between(start_ts, end_ts)].copy()
-        return self._find_missing_rows(filtered_df)
 
     def _validate_date_format(self, ts: str | int) -> any:
         """Validate and format date strings."""
@@ -185,3 +200,4 @@ class DataProcessor:
 
             return groups
 
+ 

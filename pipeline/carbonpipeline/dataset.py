@@ -2,6 +2,7 @@
 import glob
 import os
 import shutil
+from pathlib import Path
 from typing import Union
 
 import numpy as np
@@ -14,7 +15,7 @@ from .api_request import CO2_FOLDERNAME
 from .Processing.constants import SHORTNAME_TO_FULLNAME
 from .Processing.processor import DataProcessor
 from .config import CarbonPipelineConfig
-
+from .Processing.processing_utils import AGG_SCHEMA
 
 class DatasetManager:
     """Manages dataset operations including merging, processing, and saving."""
@@ -312,8 +313,89 @@ class DatasetManager:
         return region_dsets
 
     @staticmethod
-    def save_output(df: pd.DataFrame, out_name: str) -> None:
+    def save_csv(df: pd.DataFrame, out_name: str) -> None:
         """Save output in specified format."""
         path = f"{out_name}.csv"
         df.to_csv(path)
         print(f"✅ File saved to {path}")
+
+    def aggregate_dataset(
+        self,
+        region_dsets: dict[str, xr.Dataset],
+        resample_methods: dict[str, str],
+        aggregation_type: str,
+        output_name: str,
+        delete_source: bool
+    ):
+        for rid, ds in region_dsets.items():
+            variables = list(ds.data_vars.keys())
+            filtered_agg_schema = {key: AGG_SCHEMA[key] for key in variables if key in AGG_SCHEMA}
+
+            agg_ds = xr.Dataset({
+                name: getattr(
+                    ds[pred].resample(valid_time=resample_methods[aggregation_type]),
+                    func
+                )()
+                for pred, agg_types in filtered_agg_schema.items()
+                for agg_dict in [agg_types.get(aggregation_type.lower(), {})]
+                if agg_dict != "DROP"
+                for name, func in agg_dict.items()
+            })
+
+            if aggregation_type == "MONTHLY":
+                agg_ds["valid_time"] = agg_ds["valid_time"].to_index().to_period("M")
+
+            print(f"✅ Aggregation done for region {rid}")
+
+            save_path = self.save_netcdf(
+                agg_ds=agg_ds,
+                output_name=f"{output_name}_{rid}",
+                aggregation_type=aggregation_type,
+                delete_source=delete_source
+            )
+
+            print(f"✅ Aggregation saved to {save_path}")
+
+    def save_netcdf(
+        self,
+        agg_ds: xr.Dataset,
+        output_name: str,
+        aggregation_type: str | None = None,
+        delete_source: bool | None = None,
+    ) -> Path:
+        if aggregation_type:
+            filename = f"{output_name}_{aggregation_type.lower()}.nc"
+        else:
+            filename = f"{output_name}.nc"
+
+        path = Path(self.config.OUTPUT_PROCESSED_DIR) / filename
+        path.parent.mkdir(parents=True, exist_ok=True)
+
+        # Overwrite if exists
+        if path.exists():
+            print(f"⚠️ Overwriting existing{" aggregated" if aggregation_type else ""} file: {path}", flush=True)
+            path.unlink()
+
+        if "valid_time" in agg_ds.coords:
+            agg_ds = agg_ds.assign_coords(
+                valid_time=("valid_time", np.array(agg_ds["valid_time"].values, dtype="datetime64[ns]"))
+            )
+
+        encoding = {}
+        for v in agg_ds.data_vars:
+            enc = {"zlib": True, "complevel": 4}
+            # If float64 isn't required, store as float32 to cut size in half
+            if str(agg_ds[v].dtype).startswith("float64"):
+                enc["dtype"] = np.float32
+            encoding[v] = enc
+
+        agg_ds.to_netcdf(path, encoding=encoding, engine="netcdf4")
+
+        if delete_source:
+            src = Path(self.config.OUTPUT_PROCESSED_DIR) / f"{output_name}.nc"
+            try:
+                src.unlink()
+            except FileNotFoundError:
+                pass
+
+        return path
