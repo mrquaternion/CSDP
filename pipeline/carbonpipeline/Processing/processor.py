@@ -62,7 +62,7 @@ class DataProcessor:
         start_ts, end_ts = pd.to_datetime(start), pd.to_datetime(end)
         filtered_df = df[df["timestamp"].between(start_ts, end_ts)].copy()  
 
-        return self._find_missing_rows(filtered_df), (1,2)
+        return self._find_missing_rows(filtered_df)
     
     def check_data_file_time_range(self, path: str, start: str, end: str):
         df = pd.read_csv(path, on_bad_lines='skip') 

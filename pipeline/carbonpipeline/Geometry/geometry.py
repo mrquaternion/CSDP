@@ -14,9 +14,9 @@ class Geometry:
     def __init__(self, data = None):
         self.original_depth = self._get_depth(data)
         self.type_signature = self._get_type_signature(data)
-        self.geom_type = self._infer_geom_type(self.original_depth)  # ← inférer AVANT flatten
+        self.geom_type = self._infer_geom_type(self.original_depth)  # infer before flatten
 
-        self.data, self.flattened_depth = self._flatten_to_max3(data)  # ← ne touche pas à original_depth
+        self.data, self.flattened_depth = self._flatten_to_max3(data)  
         self.rect_region: list[float] | list[int] = [] # List of [float] || [int]
 
     def validate_coordinates(self):

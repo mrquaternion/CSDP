@@ -294,6 +294,7 @@ class CommandExecutor:
                 geometry = Geometry(data=self.location)
                 geometry.validate_coordinates()
                 geometry.rect_region = GeometryProcessor.process_geometry(geometry)
+                print(geometry.rect_region)
                 self.all_geometries = {0: geometry}
                 self.processing_type = ProcessingType.SITE
             # Default

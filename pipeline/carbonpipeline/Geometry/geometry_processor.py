@@ -91,14 +91,11 @@ class GeometryProcessor:
           - N/S = lat +/- offset
           - W/E = lon +/- offset
         """
+        print(point)
         if not isinstance(point, list) or len(point) < 2:
             raise ValueError("Point malformed: expected [lat, lon] or [lon, lat].")
 
-        # Try to be permissive with ordering
         lat, lon = point[0], point[1]
-        # If looks like [lon, lat], swap
-        if abs(lat) <= 180 and abs(lon) <= 90:
-            lon, lat = lat, lon
 
         offset = 0.125  # degrees
         N = lat + offset

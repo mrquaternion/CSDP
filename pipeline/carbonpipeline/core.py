@@ -248,9 +248,11 @@ class CarbonPipeline:
         """
         Post-processes downloaded data for a single point.
         """
-        df_og, inds = self.processor.load_and_filter_dataframe(data_file, start, end)
+        df_og = self.processor.load_and_filter_dataframe(data_file, start, end)
 
         dsm = self.dataset_manager.apply_column_rename(merged_ds)
+
+        print(dsm.to_dataframe())
         # The ndarray `era5_values` must be equal length of the dataframe `dfr`
         # Downloading
         dfm = (
