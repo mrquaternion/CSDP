@@ -116,6 +116,8 @@ class CommandExecutor:
                 )
                 await self._downloading_step()
             case "process":
+                content = self.pipeline.load_features_from_manifest()
+                self.data_file = content.get("data_file")
                 ArgumentParserManager.pretty_print_inputs(
                     "Processing Data Step", 
                     OutputDirectory=self.pipeline.config.OUTPUT_PROCESSED_DIR,
@@ -179,8 +181,8 @@ class CommandExecutor:
         Logic for the processing step.
         """
         content = self.pipeline.load_features_from_manifest()
-        processing_type = content.get("processing_type")
-        aggregation_type = content.get("aggregation_type")
+        self.processing_type = content.get("processing_type")
+        self.aggregation_type = content.get("aggregation_type")
         gapfilling = content.get("gapfilling")
         features = content.get("features")
         for i in range(len(features)):
@@ -191,7 +193,6 @@ class CommandExecutor:
             geometry = features[i].get("geometry")
             rect_regions = features[i].get("rect_regions")
             unzip_dirs = features[i].get("unzip_sub_folders")
-            data_file = features[i].get("data_file")
             ds = self.pipeline.dataset_manager.merge_unzipped(unzip_dirs)
 
             if not self.output_suffix:
@@ -201,15 +202,15 @@ class CommandExecutor:
             match geometry:
                 case GeometryType.POINT.value:
                     if gapfilling:
-                        self.pipeline.run_point_process(data_file, ds, preds, start, end,
+                        self.pipeline.run_point_process(self.data_file, ds, preds, start, end,
                                                         region_id, gapfilling, output_name)
                     else:
                         # fallback if the client doesn't want gap-filling to the given dataset
                         self.pipeline.run_area_process(ds, preds, start, end, rect_regions,
-                                                       output_name, processing_type, aggregation_type)
+                                                       output_name, self.processing_type, self.aggregation_type)
                 case _:
                     self.pipeline.run_area_process(ds, preds, start, end, rect_regions,
-                                                   output_name, processing_type, aggregation_type)
+                                                   output_name, self.processing_type, self.aggregation_type)
 
     @staticmethod
     def _generate_region_id(region: list[float], geometry_idx: int) -> str:
@@ -294,7 +295,7 @@ class CommandExecutor:
                 geometry = Geometry(data=self.location)
                 geometry.validate_coordinates()
                 geometry.rect_region = GeometryProcessor.process_geometry(geometry)
-                print(geometry.rect_region)
+           
                 self.all_geometries = {0: geometry}
                 self.processing_type = ProcessingType.SITE
             # Default

@@ -1,0 +1,6 @@
+action: download
+data-file: examples/site/data.csv
+location: [48.2167, -82.1556] # inside site/meta.json
+start: 2014-12-01T00:00:00      
+end: 2014-12-31T23:00:00        
+preds: [TA, PA, P, WS, WD, VPD, RH, CO2]        

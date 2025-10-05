@@ -1,0 +1,18 @@
+name: carbon
+channels:
+  - conda-forge
+dependencies:
+  - python=3.11
+  - numpy
+  - pandas
+  - xarray
+  - netcdf4
+  - eccodes
+  - rioxarray
+  - dask
+  - numexpr
+  - pyyaml
+  - beautifulsoup4
+  - pip
+  - pip:
+      - -e . 

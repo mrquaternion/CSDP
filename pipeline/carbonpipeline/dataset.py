@@ -373,7 +373,7 @@ class DatasetManager:
 
         # Overwrite if exists
         if path.exists():
-            print(f"⚠️ Overwriting existing{" aggregated" if aggregation_type else ""} file: {path}", flush=True)
+            print(f"⚠️ Overwriting existing{' aggregated' if aggregation_type else ''} file: {path}", flush=True)
             path.unlink()
 
         if "valid_time" in agg_ds.coords:

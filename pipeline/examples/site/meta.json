@@ -1,0 +1,16 @@
+{
+    "COVERAGE": {
+        "fluxnet": [200301010000, 201412312330], 
+        "ameriflux": [200301010000, 201412312330]
+    }, 
+    "SITE_ID": "CA-Gro", 
+    "SITE_NAME": "Ontario - Groundhog River, Boreal Mixedwood Forest", 
+    "LOCATION_LAT": 48.2167, 
+    "LOCATION_LON": -82.1556, 
+    "LOCATION_ELEV": 340.0, 
+    "IGBP": "MF", 
+    "MAT": 1.3, 
+    "MAP": 831.0, 
+    "MIN_DATE": 200301010000, 
+    "MAX_DATE": 201412312330
+}

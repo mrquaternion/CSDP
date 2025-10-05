@@ -56,7 +56,6 @@ class CarbonPipeline:
 
         feature_entry = {
             "region_id": region_id,
-            "data_file": data_file,
             "start_date": start,
             "end_date": end,
             "geometry": geometry.geom_type.value,
@@ -82,6 +81,7 @@ class CarbonPipeline:
         # Clean old per-feature keys (optional)
         for f in manifest.get("features", []):
             f.pop("gapfilling", None)
+            f.pop("data_file", None)
 
         # Rebuild the object with desired key order:
         features = manifest.get("features", [])
@@ -89,6 +89,7 @@ class CarbonPipeline:
 
         ordered_manifest = {
             "gapfilling": gapfilling,
+            "data_file": data_file,
             "features": features
         }
 
@@ -249,10 +250,8 @@ class CarbonPipeline:
         Post-processes downloaded data for a single point.
         """
         df_og = self.processor.load_and_filter_dataframe(data_file, start, end)
-
         dsm = self.dataset_manager.apply_column_rename(merged_ds)
 
-        print(dsm.to_dataframe())
         # The ndarray `era5_values` must be equal length of the dataframe `dfr`
         # Downloading
         dfm = (
