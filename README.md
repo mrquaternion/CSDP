@@ -7,8 +7,8 @@
 > The *first* is asking for a directory containing GeoJSON files. The goal of this use case is if you have a large area that contains polygons defining a
 set of spatial regions (e.g., administrative boundaries, fire perimeters, or ecological zones), and you want to aggregate the ERA5 data over each polygon rather than at individual points.
 > 
-> The *second* is designed for point-based extraction. Instead of polygons, you provide a list of latitude/longitude coordinates (e.g. weather station, eddy covariance tower site, or random sampling location), 
-> and the pipeline will download the ERA5 variables directly at those exact points without performing any spatial aggregation.
+> The *second* is designed for point-based extraction. Instead of polygons, you provide a latitude/longitude coordinate (e.g. weather station, eddy covariance tower site, or random sampling location), 
+> and the pipeline will download the ERA5 variables directly at this exact point without performing any spatial aggregation.
 
 ## Installation
 First, `git clone` the project to your desired local directory and go to `pipeline/`. Once this is done, please run the following commands:
@@ -64,6 +64,8 @@ for `process_config_geojsons`.
 
 ## Known limitations
 Saving a separate file for each region (polygon) is not always optimal, especially when dealing with more than a thousand regions. Depending on the size of each region, the storage requirements can become very large. For this reason, it is recommended to run the pipeline on **(1) an external hard drive** or **(2) a computing cluster with sufficient storage**.
+
+Right now, the processing type "Site Location" cannot process multiple files at the same time. However, this could be changed in the future.
 
 ## Contributing
 Contributions is welcome. I recognize that the code may not yet be perfectly structured and that documentation is still sparse. Any help in improving clarity, structure, and maintainability is especially appreciated.  
