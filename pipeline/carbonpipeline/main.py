@@ -3,6 +3,7 @@ import asyncio
 import calendar
 import json
 import os
+import pandas as pd
 from datetime import datetime
 from enum import Enum
 from pathlib import Path
@@ -12,6 +13,7 @@ from .Geometry.geometry_processor import GeometryProcessor
 from .Geometry.geometry import Geometry, GeometryType
 from .Processing.constants import *
 from .core import CarbonPipeline
+from .api_request import CO2_FOLDERNAME
 
 
 class CommandExecutorError(Exception):
@@ -28,26 +30,43 @@ class SpecialPredictors:
         self.requires_wtd_data = "WTD" in predictors
         self.requires_co2_data = "CO2" in predictors
 
-    async def download_required_data(self, pipeline, start, end):
+    async def download_required_data(self, pipeline, start, end, dir_):
         tasks = []
-
+        
         if self.requires_co2_data:
-            print("⬇️ Downloading CO2 data...")
-            tasks.append(asyncio.create_task(
-                pipeline.downloader.download_co2_data()
-            ))
+            path = Path(f"datasets/unzip/{CO2_FOLDERNAME}")
+            if not path.is_dir():
+                print("⬇️ Downloading CO2 data...")
+                tasks.append(asyncio.create_task(
+                    pipeline.downloader.download_co2_data()
+                ))
+            else:
+                print("CO2 data has already been downloaded.")
         if self.requires_wtd_data:
-            print("⬇️ Download WTD data...")
-            tasks.append(asyncio.create_task(
-                pipeline.downloader.download_wtd_data(start, end)
-            ))
+
+            start_date_obj = pd.to_datetime(start)
+            end_date_obj = pd.to_datetime(end)
+
+            start_str = start_date_obj.strftime("%Y-%m")
+            end_str = end_date_obj.strftime("%Y-%m")
+
+            filename = "_".join(["WTD", start_str, end_str])
+            final_dir_path = Path(os.path.join(dir_, filename))
+
+            if not final_dir_path.is_dir():
+                print("⬇️ Download WTD data...")
+                tasks.append(asyncio.create_task(
+                    pipeline.downloader.download_wtd_data(start, end, final_dir_path)
+                ))
+            else:
+                print(f"WTD data for {filename} has already been downloaded.")
 
         return tasks
 
 
 class ProcessingType(Enum):
-    GLOBAL = "Global"
-    BOX = "Box"
+    AREA = "Area"
+    BOXES = "Boxes"
     SITE = "Site"
 
 
@@ -59,6 +78,7 @@ class CommandExecutor:
         self.output_suffix = config_dict.get("output-filename")
         self.data_file = config_dict.get("data-file")
         self.location = config_dict.get("location")
+        self.area = config_dict.get("area")
         self.coords_dir = self.validate_coords_dir(config_dict.get("coords-dir"))
         self.start = config_dict.get("start")
         self.end = config_dict.get("end")
@@ -133,13 +153,12 @@ class CommandExecutor:
         """
         self.pipeline.setup_manifest_and_dirs(
             self.pipeline.config.OUTPUT_MANIFEST, 
-            self.pipeline.config.ZIP_DIR, 
-            self.pipeline.config.UNZIP_DIR
+            self.pipeline.config.ZIP_DIR
         )
 
         # Download WTD/CO2 data ONCE at the beginning (global datasets)
         global_tasks = await self.special_preds.download_required_data(
-            self.pipeline, self.start, self.end
+            self.pipeline, self.start, self.end, self.pipeline.config.UNZIP_DIR
         )
         if global_tasks:
             await asyncio.gather(*global_tasks)
@@ -152,12 +171,12 @@ class CommandExecutor:
                 region = geometry.rect_region
                 region_id = CommandExecutor._generate_region_id(region, i)
                 await self._download_for_stations(geometry, region, region_id, gapfilling)
-        elif self.processing_type == ProcessingType.BOX:
+        elif self.processing_type == ProcessingType.BOXES:
             for geometry_idx, geometry in enumerate(self.bounding_boxes_geometry):
                 region = geometry.rect_region
                 region_id = CommandExecutor._generate_region_id(region, geometry_idx)
                 await self._download_for_region(geometry, region, region_id, self.bounding_boxes_geometry[geometry])
-        elif self.processing_type == ProcessingType.GLOBAL:
+        elif self.processing_type == ProcessingType.AREA:
             for geometry_idx, gid in enumerate(self.all_geometries):
                 geometry = self.all_geometries[gid]
                 region = geometry.rect_region
@@ -300,11 +319,10 @@ class CommandExecutor:
                 self.processing_type = ProcessingType.SITE
             # Default
             elif self.coords_dir is None and self.data_file is None:
-                global_earth_bounding_box = [90, -180, -90, 180]
                 geometry = Geometry()
-                geometry.rect_region = global_earth_bounding_box
+                geometry.rect_region = self.area
                 self.all_geometries = {0: geometry}
-                self.processing_type = ProcessingType.GLOBAL
+                self.processing_type = ProcessingType.AREA
             # If directory with GeoJSONS is given
             elif self.coords_dir is not None and self.data_file is None:
                 self.all_geometries = self._parse_geojsons()
@@ -318,7 +336,7 @@ class CommandExecutor:
                     id_geo: geo.rect_region
                     for id_geo, geo in self.all_geometries.items()
                 }
-                self.processing_type = ProcessingType.BOX  # let know the pipeline to download in the manifest
+                self.processing_type = ProcessingType.BOXES  # let know the pipeline to download in the manifest
 
 
     @staticmethod
@@ -458,7 +476,7 @@ class CommandExecutor:
             vrs=self.vars,
             regions_to_process=regions_to_process,
             processing_type=self.processing_type.value,
-            aggregation_type=self.aggregation_type,
+            aggregation_type=self.aggregation_type
         )
                 
 

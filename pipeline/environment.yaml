@@ -1,10 +1,10 @@
-name: carbon
+name: carbon2
 channels:
   - conda-forge
 dependencies:
   - python=3.11
-  - numpy
-  - pandas
+  - numpy=2.3.3
+  - pandas=2.3.3
   - xarray
   - netcdf4
   - eccodes

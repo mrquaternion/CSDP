@@ -52,7 +52,7 @@ class CarbonPipeline:
         self.processor.check_data_file_time_range(data_file, start, end)
 
         groups = self.processor.get_request_groups(start_adj, end_adj, False)
-        unzip_dirs = await self.downloader.download_groups_async(groups, vrs, coords_to_download,False, region_id)
+        unzip_dirs = await self.downloader.download_groups_async(groups, vrs, coords_to_download, False, region_id)
 
         feature_entry = {
             "region_id": region_id,
@@ -148,12 +148,12 @@ class CarbonPipeline:
         else:
             manifest = {}
 
-        # Clean old per-feature keys (optional)
+        # Clean old per-feature keys
         for f in manifest.get("features", []):
             f.pop("processing_type", None)
             f.pop("aggregation_type", None)
 
-        # Rebuild the object with desired key order:
+        # Rebuild the object with desired key order
         features = manifest.get("features", [])
         features.append(feature_entry)
 

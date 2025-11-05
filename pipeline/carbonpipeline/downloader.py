@@ -42,14 +42,14 @@ class DataDownloader:
         self._extract_zip(zip_fp, unzip_fp)
         print("\nCO2 data downloaded and extracted.")
 
-    async def download_wtd_data(self, start_date: str, end_date: str) -> None:
+    async def download_wtd_data(self, start_date: str, end_date: str, dir_: str) -> None:
         """Web scraping for WTD data asynchronously."""
         loop = asyncio.get_running_loop()
         print("Starting WTD web scraping...")
-        await loop.run_in_executor(None, self._web_scraping_wtd_sync, start_date, end_date)
+        await loop.run_in_executor(None, self._web_scraping_wtd_sync, start_date, end_date, dir_)
         print("WTD data download complete.")
     
-    def _web_scraping_wtd_sync(self, start_date: str, end_date: str) -> None:
+    def _web_scraping_wtd_sync(self, start_date: str, end_date: str, dir_: str) -> None:
         """Synchronous WTD web scraping helper."""
         response = requests.get(self.config.WTD_URL)
         response.raise_for_status()
@@ -70,16 +70,7 @@ class DataDownloader:
                 except (ValueError, IndexError):
                     continue
 
-        start_date_obj = pd.to_datetime(start_date)
-        end_date_obj = pd.to_datetime(end_date)
-
-        start_str = start_date_obj.strftime("%Y-%m")
-        end_str = end_date_obj.strftime("%Y-%m")
-
-        filename = "_".join(["WTD", start_str, end_str])
-        dir_ = os.path.join(self.config.UNZIP_DIR, filename)
-
-        os.makedirs(dir_, exist_ok=True)
+        os.makedirs(dir_)
 
         hrs = pd.date_range(start=start_date, end=end_date, freq="h")
         month_ends = {hr.to_period("M").to_timestamp(how="end").normalize() for hr in hrs}
@@ -130,15 +121,15 @@ class DataDownloader:
     ) -> list[str]:
         """Asynchronous wrapper for download_groups using a background thread."""
         loop = asyncio.get_running_loop()
-        return await loop.run_in_executor(None, self.download_groups, groups, vars_, coords, monthly, region_id)
+        return await loop.run_in_executor(None, self._download_groups, groups, vars_, coords, monthly, region_id)
 
-    def download_groups(
+    def _download_groups(
         self,
         groups: list[tuple],
         vars_: list[str],
         coords: list[float],
         monthly: bool,
-        region_id: str = None,
+        region_id: str = None
     ) -> list[str]:
         """Download data for multiple groups."""
         fldrs = [] 
