@@ -1,0 +1,30 @@
+# Model parameters
+model:
+  latent_space_dim: 128
+  num_frequencies: 12
+  input_embedding_dim: 32
+  context_length: 32
+  obs_dropout: 0.3
+  weight_sharing: true
+  layers: 'wcswcswcswcsssss'
+  targets:
+    - NEE
+  pretrained_path: '/Users/mathiaslarochelle/Developer/CSDP/EcoPerceiver/ecoperceiver/resnet18_weights.pth'
+
+
+# Dataset parameter
+dataset:
+  targets:
+    - NEE
+  context_length: 32
+  use_modis: false
+  use_phenocam: false
+  single_image: false
+
+
+# Dataloader parameters
+dataloader:
+  batch_size: 512 # total_batch_size = batch_size * num_processes
+  num_workers: 8
+  pin_memory: yes
+  shuffle: true

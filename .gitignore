@@ -8,6 +8,8 @@ pipeline/datasets/
 pipeline/manifests
 pipeline/outputs/
 pipeline/outputs_tmp/
+EcoPerceiver/experiments/
+EcoPerceiver/runs/
 
 # Python bytecode
 __pycache__/
