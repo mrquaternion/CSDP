@@ -1,0 +1,143 @@
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Configuration</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Fraunces:wght@400;600&family=Space+Grotesk:wght@400;500;600&display=swap" rel="stylesheet">
+</head>
+<body>
+    <div class="page">
+        <header class="header">
+            <div>
+                <p class="eyebrow">Carbon Pipeline</p>
+                <h1>Configuration</h1>
+                <p class="subtitle">Select the AmeriFlux predictors and related time window to download.</p>
+            </div>
+            <div class="badge">v2</div>
+        </header>
+
+        <section class="card">
+            <h2>Inputs</h2>
+            <form method="POST" class="form">
+                {{ template_form.hidden_tag() }}
+                <div class="grid-2">
+                    <div class="field">
+                        {{ template_form.start_date.label }}
+                        {{ template_form.start_date(type="text", class="input", placeholder="YYYY-MM-DD", inputmode="numeric", maxlength="10", id="start_date") }}
+                    </div>
+                    <div class="field field-no-label">
+                        {{ template_form.start_time(type="text", class="input", placeholder="HH:MM", inputmode="numeric", maxlength="5", id="start_time", **{"aria-label": "Start time"}) }}
+                    </div>
+
+                    <div class="field">
+                        {{ template_form.end_date.label }}
+                        {{ template_form.end_date(type="text", class="input", placeholder="YYYY-MM-DD", inputmode="numeric", maxlength="10", id="end_date") }}
+                    </div>
+                    <div class="field field-no-label">
+                        {{ template_form.end_time(type="text", class="input", placeholder="HH:MM", inputmode="numeric", maxlength="5", id="end_time", **{"aria-label": "End time"}) }}
+                    </div>
+                </div>
+
+                <div class="field">
+                    {{ template_form.predictors.label }}
+                    <div class="predictor-actions">
+                        <button type="button" class="btn-secondary" id="toggle-all">Select All</button>
+                    </div>
+                    <div class="checkbox-grid">
+                        {% for subfield in template_form.predictors %}
+                            <label class="checkbox">
+                                {{ subfield() }}
+                                <span>{{ subfield.label.text }}</span>
+                            </label>
+                        {% endfor %}
+                    </div>
+                    {% if template_form.predictors.errors %}
+                        <p class="field-error is-visible" aria-live="polite">
+                            {{ template_form.predictors.errors[0] }}
+                        </p>
+                    {% endif %}
+                </div>
+
+                {% if area_type == 'point' %}
+                    <div class="field">
+                        {{ template_form.csv.label }}
+                        <p class="choice-note">Specify the relative path of the CSV file</p>
+                        {{ template_form.csv(type="text", class="input", placeholder="e.g. examples/sites/data.csv") }}
+                        {% if template_form.csv.errors %}
+                            <p class="field-error is-visible" aria-live="polite">
+                                {{ template_form.csv.errors[0] }}
+                            </p>
+                        {% endif %}
+                    </div>
+                    <div class="grid-2 grid-coordinates">
+                        <div class="field">
+                            {{ template_form.latitude.label }}
+                            <div class="field-special-case">
+                                {{ template_form.latitude(type="text", class="input", placeholder="Latitude (e.g. 45.743)", id="latitude", inputmode="decimal") }}
+                                <p class="field-error" id="latitude-error" aria-live="polite"></p>
+                            </div>
+                        </div>
+                        
+                        <div class="field-no-label">
+                            {{ template_form.longitude(type="text", class="input", placeholder="Longitude (e.g. -110.06)", id="longitude", inputmode="decimal") }}
+                            <p class="field-error" id="longitude-error" aria-live="polite"></p>
+                        </div>
+                    </div>
+
+                {% elif area_type == 'bbox' %}
+                    <div class="grid-4 grid-coordinates">
+                        <div class="field">
+                            {{ template_form.north.label }}
+                            <div class="field-special-case">
+                                {{ template_form.north(type="text", class="input", placeholder="North (e.g. 45.743)", id="north", inputmode="decimal") }}
+                                <p class="field-error" id="north-error" aria-live="polite"></p>
+                            </div>
+                        </div>
+                        <div class="field-no-label">
+                            {{ template_form.west(type="text", class="input", placeholder="West (e.g. -110.06)", id="west", inputmode="decimal") }}
+                            <p class="field-error" id="west-error" aria-live="polite"></p>
+                        </div>
+                        <div>
+                            {{ template_form.south(type="text", class="input", placeholder="South (e.g. -45.743)", id="south", inputmode="decimal") }}
+                            <p class="field-error" id="south-error" aria-live="polite"></p>
+                            <p class="field-error" id="latitude-range-error" aria-live="polite"></p>
+                        </div>
+                        <div>
+                            {{ template_form.east(type="text", class="input", placeholder="East (e.g. 110.06)", id="east", inputmode="decimal") }}
+                            <p class="field-error" id="east-error" aria-live="polite"></p>
+                            <p class="field-error" id="longitude-range-error" aria-live="polite"></p>
+                        </div>
+                    </div>
+
+                {% elif area_type == 'polygons' %}
+                    <div class="field">
+                        {{ template_form.geojsons.label }}
+                        <p class="choice-note">Specify the relative path of the folder containing the GeoJSONs files</p>
+                        {{ template_form.geojsons(type="text", class="input", placeholder="e.g. examples/geojsons") }}
+                        {% if template_form.geojsons.errors %}
+                            <p class="field-error is-visible" aria-live="polite">
+                                {{ template_form.geojsons.errors[0] }}
+                            </p>
+                        {% endif %}
+                    </div>
+                    <div class="field">
+                        {{ template_form.rid.label }}
+                        <p class="choice-note">If you need to map the output bounding boxes to your original polygons</p>
+                        {{ template_form.rid(type="text", class="input", placeholder="e.g. GID") }}
+                    </div>
+
+                {% endif %}
+
+                <div class="actions">
+                    {{ template_form.submit(class="btn", id="submit-button") }}
+                </div>
+            </form>
+        </section>
+    </div>
+
+    <script src="{{ url_for('static', filename='configuration.js') }}"></script>
+</body>
+</html>

@@ -1,0 +1,63 @@
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Credentials</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Fraunces:wght@400;600&family=Space+Grotesk:wght@400;500;600&display=swap" rel="stylesheet">
+</head>
+<body>
+    <div class="page">
+        <header class="header">
+            <div>
+                <p class="eyebrow">Carbon Pipeline</p>
+                <h1>Remote Monitoring</h1>
+            </div>
+            <div class="badge">v2</div>
+        </header>
+
+        <section class="card">
+            <h2>Transfer Output</h2>
+            <pre class="log-box" id="transfer-output">No output yet.</pre>
+        </section>
+
+        <section class="card">
+            <h2>Transfer Errors</h2>
+            <pre class="log-box error-log" id="transfer-error">No errors.</pre>
+        </section>
+    </div>
+
+    <script>
+        const outputEl = document.getElementById('transfer-output');
+        const errorEl = document.getElementById('transfer-error');
+
+        async function startTransfer() {
+            const response = await fetch('/remote-monitoring/start', { method: 'POST' });
+            const data = await response.json();
+
+            if (!response.ok || !data.ok) {
+                errorEl.textContent = data.error || 'Unknown error.';
+                return;
+            }
+
+            pollTransfer();
+        }
+
+        async function pollTransfer() {
+            const response = await fetch('/remote-monitoring/status');
+            const data = await response.json();
+
+            outputEl.textContent = data.output || 'No output yet.';
+            errorEl.textContent = data.error || 'No errors.';
+
+            if (data.running) {
+                setTimeout(pollTransfer, 1000);
+            }
+        }
+
+        startTransfer();
+    </script>
+</body>
+</html>

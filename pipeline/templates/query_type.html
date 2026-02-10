@@ -1,0 +1,38 @@
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Query Type</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Fraunces:wght@400;600&family=Space+Grotesk:wght@400;500;600&display=swap" rel="stylesheet">
+</head>
+<body>
+    <div class="page">
+        <header class="header">
+            <div>
+                <p class="eyebrow">Carbon Pipeline</p>
+                <h1>Query Type</h1>
+                <p class="subtitle">Choose what type of query you want.</p>
+            </div>
+            <div class="badge">v2</div>
+        </header>
+
+        <section class="card">
+            <h2>Choose one</h2>
+            <div class="choice-grid">
+                <a class="choice-card" href="{{ url_for('select_query_type', query_type='download_process') }}">
+                    <div class="choice-title">Download and Process Data</div>
+                    <p class="choice-note">Download ERA5 NetCDF data and run processing workflows</p>
+                </a>
+
+                <a class="choice-card" href="{{ url_for('select_query_type', query_type='gas_flux_predictions') }}">
+                    <div class="choice-title">Gas Flux Predictions</div>
+                    <p class="choice-note">Same process as <i>Download and Process Data</i> but does gas flux predictions with EcoPerceiver in addition</p>
+                </a>
+            </div>
+        </section>
+    </div>
+</body>
+</html>

@@ -1,4 +1,4 @@
-# carbonpipeline/processor.py
+"""Data processing utilities for AmeriFlux/ERA5 conversion."""
 from datetime import datetime
 import re
 import numpy as np
@@ -16,7 +16,7 @@ class DataProcessor:
         self.config = config
 
     @staticmethod
-    def convert_ameriflux_to_era5(df: pd.DataFrame, pred: str) -> np.ndarray:
+    def convert_ameriflux_to_era5(dataframe: pd.DataFrame, predictor: str) -> np.ndarray:
         """
         Converts AmeriFlux DataFrame columns to ERA5 predictor values.
 
@@ -24,7 +24,7 @@ class DataProcessor:
         ----------
         df : pd.DataFrame
             Input DataFrame containing AmeriFlux data.
-        pred : str
+        predictor : str
             The predictor variable name for which ERA5 values are required.
 
         Returns
@@ -34,21 +34,21 @@ class DataProcessor:
 
         Notes
         -----
-        - The columns required for the predictor are determined by VARIABLES_FOR_PREDICTOR[pred].
+        - The columns required for the predictor are determined by VARIABLES_FOR_PREDICTOR[predictor].
         - If a processing function is defined in PROCESSORS for the predictor, it is applied row-wise.
         - If no processing function is found, the first relevant column is returned as a NumPy array.
         """
-        cols = VARIABLES_FOR_PREDICTOR[pred]
-        func = PROCESSORS.get(pred)
-        arr = df[cols].to_numpy(dtype=float)
+        required_columns = VARIABLES_FOR_PREDICTOR[predictor]
+        processor_fn = PROCESSORS.get(predictor)
+        values = dataframe[required_columns].to_numpy(dtype=float)
 
-        if func is None:
-            return arr[:, 0]
-        return func(*[arr[:, i] for i in range(arr.shape[1])])
+        if processor_fn is None:
+            return values[:, 0]
+        return processor_fn(*[values[:, i] for i in range(values.shape[1])])
         
     
-    def load_and_filter_dataframe(self, path: str, start: str, end: str) -> pd.DataFrame:
-        """Load and filter dataframe based on time range."""
+    def load_and_filter_ameriflux_csv(self, path: str, start: str, end: str) -> pd.DataFrame:
+        """Load and filter AmeriFlux CSV data based on time range."""
 
         df = pd.read_csv(path, on_bad_lines='skip') 
 
@@ -62,10 +62,11 @@ class DataProcessor:
         start_ts, end_ts = pd.to_datetime(start), pd.to_datetime(end)
         filtered_df = df[df["timestamp"].between(start_ts, end_ts)].copy()  
 
-        return self._find_missing_rows(filtered_df)
+        return self._rows_with_missing_values(filtered_df)
     
-    def check_data_file_time_range(self, path: str, start: str, end: str):
-        df = pd.read_csv(path, on_bad_lines='skip') 
+    def validate_ameriflux_time_range(self, path: str, start: str, end: str) -> None:
+        """Validate that requested dates are within the AmeriFlux CSV time range."""
+        df = pd.read_csv(path, on_bad_lines='skip')
         df["timestamp"] = df["timestamp"].apply(self._validate_date_format).pipe(pd.to_datetime)         
         df = df[(df["timestamp"].dt.minute == 0) & (df["timestamp"].dt.second == 0)]
 
@@ -78,7 +79,7 @@ class DataProcessor:
             raise ValueError(msg)
 
     def _validate_date_format(self, ts: str | int) -> any:
-        """Validate and format date strings."""
+        """Normalize date strings to the configured datetime format."""
         if isinstance(ts, str):                                      
             try:
                 # Attempt to parse with the main format
@@ -101,7 +102,7 @@ class DataProcessor:
         except (ValueError, IndexError):
             return pd.NaT
 
-    def _find_missing_rows(self, df: pd.DataFrame) -> pd.DataFrame:
+    def _rows_with_missing_values(self, df: pd.DataFrame) -> pd.DataFrame:
         """
         Identify and return rows in the DataFrame that contain missing (NaN) values, excluding the 'timestamp' 
         column. Adds 'year', 'month', 'day' and 'time' columns extracted from the 'timestamp' column for each missing row.
@@ -116,20 +117,20 @@ class DataProcessor:
         pd.DataFrame
             DataFrame containing rows with missing values (excluding 'timestamp').
         """
-        miss = df[df.drop(columns="timestamp").isnull().any(axis=1)].copy()
-        miss.loc[:, "year"] = miss["timestamp"].dt.year
-        miss.loc[:, "month"] = miss["timestamp"].dt.month
-        miss.loc[:, "day"] = miss["timestamp"].dt.day
-        miss.loc[:, "time"] = miss["timestamp"].dt.strftime('%H:%M:%S')
-        return miss
+        missing = df[df.drop(columns="timestamp").isnull().any(axis=1)].copy()
+        missing.loc[:, "year"] = missing["timestamp"].dt.year
+        missing.loc[:, "month"] = missing["timestamp"].dt.month
+        missing.loc[:, "day"] = missing["timestamp"].dt.day
+        missing.loc[:, "time"] = missing["timestamp"].dt.strftime("%H:%M:%S")
+        return missing
 
     @staticmethod
-    def get_missing_groups(df: pd.DataFrame) -> list[tuple]:
-        """Get groups of missing data."""
-        return [g for g, _ in df.groupby(["year", "month", "day", "time"])]
+    def group_missing_timestamps(df: pd.DataFrame) -> list[tuple]:
+        """Group missing data rows by timestamp components."""
+        return [group for group, _ in df.groupby(["year", "month", "day", "time"])]
 
     @staticmethod
-    def get_request_groups(start: pd.Timestamp, end: pd.Timestamp, monthly: bool) -> list[tuple]:
+    def build_request_groups(start: pd.Timestamp, end: pd.Timestamp, monthly: bool) -> list[tuple]:
         """
         Generate groups dynamically for ERA5 requests.
         - If monthly=False → hourly/daily ERA5:

@@ -1,27 +1,13 @@
 Containers
 .DS_Store
+pipeline/carbonpipeline/Processing/__pycache__/
+pipeline/carbonpipeline/Geometry/__pycache__/
 pipeline/carbonpipeline.egg-info
 pipeline/carbonpipeline/__pycache__/
 pipeline/datasets/
+pipeline/manifests
 pipeline/outputs/
-pipeline/notebook.ipynb
-pipeline/out.csv
-pipeline/predictors.csv
-pipeline/data.csv
-pipeline/manifest.json
-pipeline/out.nc
-pipeline/unzip/
-pipeline/test.nc
-pipeline/merge_era5_and_co2_proc.ipynb
-pipeline/merge_era5_and_wtd_proc.ipynb
-EcoPerceiver/
-*.nc
-carbonpipeline/Processing/__pycache__/
-carbonpipeline/Geometry/__pycache__/
-pipeline/.idea/
-.idea/
-pipeline/geojsons/
-pipeline/output_testing.csv
+pipeline/outputs_tmp/
 
 # Python bytecode
 __pycache__/
@@ -30,4 +16,3 @@ __pycache__/
 
 # Jupyter
 .ipynb_checkpoints/
-

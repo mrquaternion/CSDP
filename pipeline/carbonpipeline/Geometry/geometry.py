@@ -1,8 +1,10 @@
+"""Geometry utilities for parsing and normalizing coordinate shapes."""
 from enum import Enum
 from typing import Tuple
 
 
 class GeometryType(Enum):
+    """Supported geometry types inferred from coordinate nesting depth."""
     POINT = "Point"
     LINESTRING = "LineString"
     POLYGON = "Polygon"
@@ -11,15 +13,17 @@ class GeometryType(Enum):
 
 
 class Geometry:
+    """Represents a geometry with inferred type and normalized coordinates."""
     def __init__(self, data = None):
         self.original_depth = self._get_depth(data)
         self.type_signature = self._get_type_signature(data)
         self.geom_type = self._infer_geom_type(self.original_depth)  # infer before flatten
 
         self.data, self.flattened_depth = self._flatten_to_max3(data)  
-        self.rect_region: list[float] | list[int] = [] # List of [float] || [int]
+        self.bbox: list[float] | list[int] = [] # List of [float] || [int]
 
     def validate_coordinates(self):
+       """Validate that coordinate structure contains numeric pairs."""
        self._validation(self.data)
 
     def _validation(self, data):
@@ -34,24 +38,26 @@ class Geometry:
             raise TypeError(f"Invalid element in coordinate structure: {self.data}")
     
     def _flatten_to_max3(self, lst) -> Tuple[list, int]:
+        """Flatten overly-nested coordinate lists while preserving known geometry shapes."""
         depth = self._get_depth(lst)
         result = lst
         
-        # Don't flatten MultiPolygon structures
+        # don't flatten MultiPolygon structures
         if depth == 4 and self.geom_type == GeometryType.MULTIPOLYGON:
             return result, depth
         
-        # Don't flatten Polygon structures  
+        # don't flatten Polygon structures  
         if depth == 3 and self.geom_type == GeometryType.POLYGON:
             return result, depth
         
-        # Only flatten if we have excessive depth (>4) and it's not a recognized geometry type
+        # only flatten if we have excessive depth (>4) and it's not a recognized geometry type
         while depth > 4:
             result = [item for sub in result for item in sub]
             depth -= 1
         return result, depth
 
     def _get_depth(self, lst):
+        """Compute nesting depth of a coordinate structure."""
         if isinstance(lst, list) and lst:
             return 1 + max(self._get_depth(item) for item in lst)
         if isinstance(lst, list):
@@ -60,6 +66,7 @@ class Geometry:
             return 0
 
     def _get_type_signature(self, lst):
+        """Build a human-readable signature of the nested list structure."""
         if isinstance(lst, list):
             if lst:
                 return "[" + self._get_type_signature(lst[0]) + "]"
@@ -70,6 +77,7 @@ class Geometry:
 
     @staticmethod
     def _infer_geom_type(depth):
+        """Infer geometry type from nesting depth."""
         if depth == 1:
             return GeometryType.POINT
         elif depth == 2:

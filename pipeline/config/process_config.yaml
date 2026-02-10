@@ -1,0 +1,4 @@
+# process_config.yaml
+action: process
+output-filename:    # prefix of the output files
+manifest:           # path of the JSON manifests

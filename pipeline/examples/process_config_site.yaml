@@ -1,2 +1,3 @@
 action: process
 output-filename: test
+manifest: "manifests/example_run.json"

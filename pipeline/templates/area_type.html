@@ -1,0 +1,49 @@
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Area Type</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Fraunces:wght@400;600&family=Space+Grotesk:wght@400;500;600&display=swap" rel="stylesheet">
+</head>
+<body>
+    <div class="page">
+        <header class="header">
+            <div>
+                <p class="eyebrow">Carbon Pipeline</p>
+                <h1>Area Type</h1>
+                <p class="subtitle">Choose how you want to define the area for {{ query_type_label|lower }}.</p>
+            </div>
+            <div class="badge">v2</div>
+        </header>
+
+        <section class="card">
+            <h2>Choose one</h2>
+            <div class="choice-grid">
+                {% if 'point' in allowed_area_types %}
+                <a class="choice-card" href="{{ url_for('configuration', area_type='point') }}">
+                    <div class="choice-title">Point</div>
+                    <p class="choice-note">Single coordinate input (Eddy Covariance Flux Tower)</p>
+                </a>
+                {% endif %}
+
+                {% if 'bbox' in allowed_area_types %}
+                <a class="choice-card" href="{{ url_for('configuration', area_type='bbox') }}">
+                    <div class="choice-title">Bounding Box</div>
+                    <p class="choice-note">North, south, east, west bounds</p>
+                </a>
+                {% endif %}
+
+                {% if 'polygons' in allowed_area_types %}
+                <a class="choice-card" href="{{ url_for('configuration', area_type='polygons') }}">
+                    <div class="choice-title">Polygons</div>
+                    <p class="choice-note">Upload complex shapes (GeoJSONs)</p>
+                </a>
+                {% endif %}
+            </div>
+        </section>
+    </div>
+</body>
+</html>

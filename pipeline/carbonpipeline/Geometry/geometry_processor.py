@@ -1,7 +1,8 @@
+"""Geometry processing helpers for ERA5 bounding boxes."""
 from typing import List, Union
 from .geometry import Geometry, GeometryType
 
-Coord = List[float]          # [lon, lat] ou [lat, lon]
+Coord = List[float]          # [lon, lat] or [lat, lon]
 Ring = List[Coord]           # [[..., ...], ...]
 Polygon = List[Ring]         # [outer_ring, hole1, ...]
 MultiPolygon = List[Polygon] # [[ring...], [ring...]], ...
@@ -18,13 +19,13 @@ class GeometryProcessor:
         """
         match geometry.geom_type:
             case GeometryType.POINT:
-                region = GeometryProcessor._get_point_outer_bounds(geometry.data)
+                region = GeometryProcessor._get_point_bbox(geometry.data)
 
             case GeometryType.POLYGON:
-                region = GeometryProcessor._get_rect_region_covering_polygon(geometry.data)
+                region = GeometryProcessor._get_bbox_covering_polygon(geometry.data)
 
             case GeometryType.MULTIPOLYGON:
-                region = GeometryProcessor._get_polys_region(geometry.data)
+                region = GeometryProcessor._get_multipolygon_bbox(geometry.data)
 
             case GeometryType.UNKNOWN:
                 raise TypeError("Unsupported geometry depth/type.")
@@ -40,7 +41,7 @@ class GeometryProcessor:
     # --------------------------
 
     @staticmethod
-    def _infer_lonlat_indices(ring: Ring) -> tuple[int, int]:
+    def _infer_lon_lat_indices(ring: Ring) -> tuple[int, int]:
         """
         Determines if coordinates are [lon, lat] (GeoJSON standard)
         or [lat, lon].
@@ -83,7 +84,7 @@ class GeometryProcessor:
         return ring  # type: ignore[return-value]
 
     @staticmethod
-    def _get_point_outer_bounds(point: List[float]) -> List[float]:
+    def _get_point_bbox(point: List[float]) -> List[float]:
         """
         Build a small rectangle around a point.
 
@@ -134,13 +135,13 @@ class GeometryProcessor:
         return [N, W, S, E]
 
     @staticmethod
-    def _get_rect_region_covering_polygon(poly_or_ring: Union[Ring, Polygon]) -> List[float]:
+    def _get_bbox_covering_polygon(poly_or_ring: Union[Ring, Polygon]) -> List[float]:
         """
         Compute the ERA5 bounding box [N, W, S, E] for a Polygon.
         Accepts either a ring or a GeoJSON polygon (outer ring is used).
         """
         ring = GeometryProcessor._normalize_outer_ring(poly_or_ring)
-        lon_i, lat_i = GeometryProcessor._infer_lonlat_indices(ring)
+        lon_i, lat_i = GeometryProcessor._infer_lon_lat_indices(ring)
 
         lons = [p[lon_i] for p in ring]
         lats = [p[lat_i] for p in ring]
@@ -155,7 +156,7 @@ class GeometryProcessor:
         return GeometryProcessor._ensure_min_bbox_size(region)
 
     @staticmethod
-    def _get_polys_region(polys: MultiPolygon) -> List[float]:
+    def _get_multipolygon_bbox(polys: MultiPolygon) -> List[float]:
         """
         Compute a single ERA5 bounding box [N, W, S, E] that covers
         all polygons in a MultiPolygon.
@@ -169,7 +170,7 @@ class GeometryProcessor:
 
         for poly in polys:
             ring = GeometryProcessor._normalize_outer_ring(poly)
-            lon_i, lat_i = GeometryProcessor._infer_lonlat_indices(ring)
+            lon_i, lat_i = GeometryProcessor._infer_lon_lat_indices(ring)
 
             lons = [p[lon_i] for p in ring]
             lats = [p[lat_i] for p in ring]

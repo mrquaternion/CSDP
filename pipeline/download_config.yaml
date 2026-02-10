@@ -1,8 +1,0 @@
-# download_config.yaml
-action: download
-coords-dir:         # directory of JSON files | nothing
-start:              # format: YYYY-MM-DDTHH:MM:SS
-end:                # format: YYYY-MM-DDTHH:MM:SS
-preds:              # AmeriFlux predictors | nothing (for predictors)
-aggregation-type:   # DAILY | MONTHLY | nothing
-id-field:           # Identifier field (inside your geojson features) | nothing

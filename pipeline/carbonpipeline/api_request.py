@@ -2,8 +2,10 @@
 import os
 import cdsapi
 
+from .config import CarbonPipelineConfig
+from .config import CarbonPipelineConfig
 
-CO2_FOLDERNAME = "CO2_2003-2022"
+
 
 class APIRequest:
     """
@@ -21,7 +23,7 @@ class APIRequest:
         Time in "HH:MM" format.
     coords : list[float]
         Coordinates of the request.
-    vars_ : list[str] | None
+    era5_vars : list[str] | None
         Optional list of high-level variables under ERA5 long version naming.
     """
 
@@ -32,7 +34,7 @@ class APIRequest:
         days: str | list[str],
         times: str | list[str],
         coords: list[float],
-        vars_: list[str],
+        era5_vars: list[str],
         monthly: bool = False
     ):
         self.year = year
@@ -40,17 +42,17 @@ class APIRequest:
         self.days = days if isinstance(days, list) else [days]
         self.times = times if isinstance(times, list) else [times]
         self.coords = coords
-        self.vars = vars_
+        self.era5_vars = era5_vars
         self.area = None
         self.monthly = monthly
 
     def query(self, zip_dir) -> str:
         if self.monthly:
-            return self.query_era5_monthly(zip_dir)
+            return self._query_era5_monthly(zip_dir)
         else:
-            return self.query_era5(zip_dir)
+            return self._query_era5_hourly(zip_dir)
 
-    def query_era5_monthly(self, zip_dir) -> str:
+    def _query_era5_monthly(self, zip_dir) -> str:
         """
         Constructs and submits a download request to the CDS API for ERA5 single-level reanalysis data.
         """
@@ -62,7 +64,7 @@ class APIRequest:
         dataset = "reanalysis-era5-single-levels-monthly-means"
         request = {
             "product_type": ["monthly_averaged_reanalysis_by_hour_of_day"],
-            "variable": self.vars,
+            "variable": self.era5_vars,
             "year": [self.year],
             "month": self.months,
             "time": self.times,
@@ -83,7 +85,7 @@ class APIRequest:
 
         return filename
 
-    def query_era5(self, zip_dir: str) -> str:
+    def _query_era5_hourly(self, zip_dir: str) -> str:
         """
         Constructs and submits a download request to the CDS API for ERA5 single-level reanalysis data.
         """
@@ -95,7 +97,7 @@ class APIRequest:
         dataset = "reanalysis-era5-single-levels"
         request = {
             "product_type":    ["reanalysis"],
-            "variable":        self.vars,
+            "variable":        self.era5_vars,
             "year":            [self.year],
             "month":           self.months,
             "day":             self.days,
@@ -116,6 +118,24 @@ class APIRequest:
         print(f"\nFinished download for {filename}")
 
         return filename
+
+    @classmethod
+    def query_co2(self, zip_dir: str) -> None:
+        dataset = "satellite-carbon-dioxide"
+        request = {
+            "processing_level": ["level_3"],
+            "variable": "xco2",
+            "sensor_and_algorithm": "merged_obs4mips",
+            "version": ["4_5"]
+        }
+
+        client = cdsapi.Client()
+        result = client.retrieve(dataset, request)
+
+        filename = f"{CarbonPipelineConfig.CO2_FOLDERNAME}.zip"
+        target = os.path.join(zip_dir, filename)
+
+        result.download(target)
 
     def _filename_logic(self) -> str:
         # Always normalize into lists
@@ -157,25 +177,4 @@ class APIRequest:
 
         # Case 6: single hour
         return f"ERA5_{years[0]}-{months[0]}-{days[0]}T{times[0]}.zip"
-
-    @classmethod
-    def query_co2(self, zip_dir: str) -> None:
-        dataset = "satellite-carbon-dioxide"
-        request = {
-            "processing_level": ["level_3"],
-            "variable": "xco2",
-            "sensor_and_algorithm": "merged_obs4mips",
-            "version": ["4_5"]
-        }
-
-        client = cdsapi.Client()
-        result = client.retrieve(dataset, request)
-
-        filename = f"{CO2_FOLDERNAME}.zip"
-        target = os.path.join(zip_dir, filename)
-
-        result.download(target)
-
-
-
 

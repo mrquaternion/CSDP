@@ -1,0 +1,11 @@
+# download_config.yaml
+action: download
+geometries-directory:   # directory of JSON files | nothing
+bbox-coordinates:       # coordinates of the bounding region
+location-coordinates:   # coordinates of the data point
+start-date:             # format: YYYY-MM-DDTHH:MM:SS
+end-date:               # format: YYYY-MM-DDTHH:MM:SS
+ameriflux-predictors:   # AmeriFlux predictors | nothing (for predictors)
+aggregation-type:       # DAILY | MONTHLY | nothing
+id-field:               # identifier field (inside your geojson features) | nothing
+manifest:               # path of the JSON manifests

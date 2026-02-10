@@ -1,3 +1,4 @@
+"""CLI entry point and orchestration for the carbon pipeline."""
 # carbonpipeline/cli.py
 import asyncio
 import calendar
@@ -13,10 +14,11 @@ from .Geometry.geometry_processor import GeometryProcessor
 from .Geometry.geometry import Geometry, GeometryType
 from .Processing.constants import *
 from .core import CarbonPipeline
-from .api_request import CO2_FOLDERNAME
+from .downloader import DataDownloaderError
 
 
 class CommandExecutorError(Exception):
+    """Raised for configuration or execution errors in the CLI layer."""
     def __init__(self, message: str) -> None:
         super().__init__(message)
         self.message = message
@@ -26,40 +28,36 @@ class CommandExecutorError(Exception):
 
 
 class SpecialPredictors:
+    """Tracks optional datasets (CO2/WTD) required by selected predictors."""
     def __init__(self, predictors: list[str]):
         self.requires_wtd_data = "WTD" in predictors
         self.requires_co2_data = "CO2" in predictors
 
-    async def download_required_data(self, pipeline, start, end, dir_):
+    async def download_required_data(self, pipeline, start, end):
+        """Kick off CO2/WTD downloads if required and missing on disk."""
         tasks = []
-        
+
         if self.requires_co2_data:
-            path = Path(f"datasets/unzip/{CO2_FOLDERNAME}")
-            if not path.is_dir():
+            co2_root = Path(pipeline.config.CO2_DIR)
+            co2_present = co2_root.is_dir() and any(co2_root.rglob("*.nc"))
+            if not co2_present:
                 print("⬇️ Downloading CO2 data...")
-                tasks.append(asyncio.create_task(
-                    pipeline.downloader.download_co2_data()
-                ))
+                tasks.append(asyncio.create_task(pipeline.downloader.download_co2_data(co2_root)))
             else:
                 print("CO2 data has already been downloaded.")
+
         if self.requires_wtd_data:
+            start_str = pd.to_datetime(start).strftime("%Y-%m")
+            end_str = pd.to_datetime(end).strftime("%Y-%m")
+            time_window = "_".join([start_str, end_str])
 
-            start_date_obj = pd.to_datetime(start)
-            end_date_obj = pd.to_datetime(end)
-
-            start_str = start_date_obj.strftime("%Y-%m")
-            end_str = end_date_obj.strftime("%Y-%m")
-
-            filename = "_".join(["WTD", start_str, end_str])
-            final_dir_path = Path(os.path.join(dir_, filename))
-
-            if not final_dir_path.is_dir():
+            wtd_path = Path(os.path.join(pipeline.config.WTD_DIR, time_window))
+            wtd_present = wtd_path.is_dir() and any(wtd_path.rglob("*.tif"))
+            if not wtd_present:
                 print("⬇️ Download WTD data...")
-                tasks.append(asyncio.create_task(
-                    pipeline.downloader.download_wtd_data(start, end, final_dir_path)
-                ))
+                tasks.append(asyncio.create_task(pipeline.downloader.download_wtd_data(start, end, wtd_path)))
             else:
-                print(f"WTD data for {filename} has already been downloaded.")
+                print(f"WTD data for {time_window} has already been downloaded.")
 
         return tasks
 
@@ -71,29 +69,32 @@ class ProcessingType(Enum):
 
 
 class CommandExecutor:
+    """Orchestrates download/process stages based on the YAML config."""
     def __init__(self, config_dict: dict):
         self.pipeline = CarbonPipeline()
 
+        self.manifest_path = config_dict.get("manifest")
+
         self.action = config_dict.get("action")
         self.output_suffix = config_dict.get("output-filename")
-        self.data_file = config_dict.get("data-file")
-        self.location = config_dict.get("location")
-        self.area = config_dict.get("area")
-        self.coords_dir = self.validate_coords_dir(config_dict.get("coords-dir"))
-        self.start = config_dict.get("start")
-        self.end = config_dict.get("end")
-        self.preds = config_dict.get("preds")
+        self.ameriflux_csv = config_dict.get("data-file")
+        self.location = config_dict.get("location-coordinates")
+        self.area = config_dict.get("bbox-coordinates")
+        self.geometries_dir = self.validate_geometries_dir(config_dict.get("geometries-directory"))
+        self.start = config_dict.get("start-date")
+        self.end = config_dict.get("end-date")
+        self.predictors = config_dict.get("ameriflux-predictors")
         self.aggregation_type = config_dict.get("aggregation-type")
         self.id_field = config_dict.get("id-field")
 
         self.all_geometries: dict[str | int, Geometry] = {}
         self.bounding_boxes_geometry: dict[Geometry, dict[str | int, list[float]]] = {}
         self.special_preds: SpecialPredictors | None = None # SpecialPredictors object
-        self.vars: list[str] | None = None # List of variables to download from ERA5
-        self.processing_type: ProcessingType
+        self.era5_vars: list[str] | None = None # List of variables to download from ERA5
+        self.geometry_mode: ProcessingType
 
     @staticmethod
-    def validate_coords_dir(coords_file: str | None) -> str | None:
+    def validate_geometries_dir(coords_file: str | None) -> str | None:
         """
         Validate that coords_file is a directory if provided.
         Returns the same path if valid, or None if no path given.
@@ -119,12 +120,13 @@ class CommandExecutor:
         end = self._parse_datetime(self.end)
 
         # Ask processor to build request groups
-        groups = self.pipeline.processor.get_request_groups(start, end, self.aggregation_type == "MONTHLY")
+        groups = self.pipeline.processor.build_request_groups(start, end, self.aggregation_type == "MONTHLY")
 
         return len(groups)
 
     # Only callable function
     async def run(self):
+        """Dispatch to download or process based on config action."""
         match self.action:
             case "download":
                 self._prepare_download_inputs()
@@ -132,59 +134,86 @@ class CommandExecutor:
                     "Downloading Data Step",
                     StartDate=self.start, 
                     EndDate=self.end, 
-                    AMFPredictors=self.preds
+                    AMFPredictors=self.predictors
                 )
                 await self._downloading_step()
             case "process":
-                content = self.pipeline.load_features_from_manifest()
-                self.data_file = content.get("data_file")
+                content = self.pipeline.load_features_from_manifest(self.manifest_path)
+                self.ameriflux_csv = content.get("data_file")
                 ArgumentParserManager.pretty_print_inputs(
                     "Processing Data Step", 
                     OutputDirectory=self.pipeline.config.OUTPUT_PROCESSED_DIR,
-                    DataFile=self.data_file
+                    DataFile=self.ameriflux_csv
                 )
                 self._processing_step()
             case _:
                 raise ValueError(f"Unknown action: {self.action}")
 
     async def _downloading_step(self):
-        """
-        Logic for the downloading step.
-        """
+        """Execute download stage (CO2/WTD first, then ERA5 by region)."""
         self.pipeline.setup_manifest_and_dirs(
-            self.pipeline.config.OUTPUT_MANIFEST, 
+            self.manifest_path, 
             self.pipeline.config.ZIP_DIR
         )
 
-        # Download WTD/CO2 data ONCE at the beginning (global datasets)
+        # download WTD/CO2 data ONCE at the beginning (global datasets)
         global_tasks = await self.special_preds.download_required_data(
-            self.pipeline, self.start, self.end, self.pipeline.config.UNZIP_DIR
+            self.pipeline, 
+            self.start, 
+            self.end,
         )
-        if global_tasks:
-            await asyncio.gather(*global_tasks)
 
-        # Download ERA5 data sequentially for each region (to avoid CDS conflicts)
-        if self.processing_type == ProcessingType.SITE:
+        if global_tasks:
+            results = await asyncio.gather(*global_tasks, return_exceptions=True)
+            for res in results:
+                if isinstance(res, DataDownloaderError):
+                    if not self._maybe_skip_wtd(res):
+                        raise res
+                elif isinstance(res, Exception):
+                    raise res
+
+        # download ERA5 data sequentially for each region (to avoid CDS conflicts)
+        if self.geometry_mode == ProcessingType.SITE:
             gapfilling = await self._ask_gapfill()
             for i, geometry_idx in enumerate(self.all_geometries):
                 geometry = self.all_geometries[geometry_idx]
-                region = geometry.rect_region
+                region = geometry.bbox
                 region_id = CommandExecutor._generate_region_id(region, i)
                 await self._download_for_stations(geometry, region, region_id, gapfilling)
-        elif self.processing_type == ProcessingType.BOXES:
+
+        elif self.geometry_mode == ProcessingType.BOXES:
             for geometry_idx, geometry in enumerate(self.bounding_boxes_geometry):
-                region = geometry.rect_region
+                region = geometry.bbox
                 region_id = CommandExecutor._generate_region_id(region, geometry_idx)
                 await self._download_for_region(geometry, region, region_id, self.bounding_boxes_geometry[geometry])
-        elif self.processing_type == ProcessingType.AREA:
+
+        elif self.geometry_mode == ProcessingType.AREA:
             for geometry_idx, gid in enumerate(self.all_geometries):
                 geometry = self.all_geometries[gid]
-                region = geometry.rect_region
+                region = geometry.bbox
                 region_id = CommandExecutor._generate_region_id(region, geometry_idx)
                 await self._download_for_region(geometry, region, region_id, {gid: region})
 
+    def _maybe_skip_wtd(self, err: Exception) -> bool:
+        """Skip WTD only for the 'no files for date range' error."""
+        message = str(err).strip()
+        if "No WTD files found for the specified date range" not in message:
+            return False
+
+        suffix = f" Details: {message}" if message else ""
+        print(f"WTD data unavailable for the requested date range. Skipping WTD.\n{suffix}")
+
+        if self.predictors and "WTD" in self.predictors:
+            self.predictors.remove("WTD")
+        if self.era5_vars and "wtd" in self.era5_vars:
+            self.era5_vars.remove("wtd")
+        if self.special_preds:
+            self.special_preds.requires_wtd_data = False
+        return True
+
     @staticmethod
     async def _ask_gapfill() -> bool:
+        """Prompt user whether to gap-fill EC station data."""
         while True:
             ans = (await asyncio.to_thread(
                 input, "\nDo you want to gap-fill the dataset in input? (Y/n): "
@@ -196,23 +225,21 @@ class CommandExecutor:
             print("Invalid input: please enter 'Y' to gap-fill, or 'n' if not.")
 
     def _processing_step(self):
-        """
-        Logic for the processing step.
-        """
-        content = self.pipeline.load_features_from_manifest()
-        self.processing_type = content.get("processing_type")
+        """Execute processing stage from manifest.json."""
+        content = self.pipeline.load_features_from_manifest(self.manifest_path)
+        self.geometry_mode = content.get("processing_type")
         self.aggregation_type = content.get("aggregation_type")
         gapfilling = content.get("gapfilling")
         features = content.get("features")
         for i in range(len(features)):
             region_id = features[i].get("region_id")
-            preds = features[i].get("preds")
+            predictors = features[i].get("preds")
             start = features[i].get("start_date")
             end = features[i].get("end_date")
             geometry = features[i].get("geometry")
             rect_regions = features[i].get("rect_regions")
             unzip_dirs = features[i].get("unzip_sub_folders")
-            ds = self.pipeline.dataset_manager.merge_unzipped(unzip_dirs)
+            ds = self.pipeline.dataset_manager.merge_unzipped_netcdfs(unzip_dirs)
 
             if not self.output_suffix:
                 self.output_suffix = "output"
@@ -221,15 +248,15 @@ class CommandExecutor:
             match geometry:
                 case GeometryType.POINT.value:
                     if gapfilling:
-                        self.pipeline.run_point_process(self.data_file, ds, preds, start, end,
+                        self.pipeline.run_point_process(self.ameriflux_csv, ds, predictors, start, end,
                                                         region_id, gapfilling, output_name)
                     else:
                         # fallback if the client doesn't want gap-filling to the given dataset
-                        self.pipeline.run_area_process(ds, preds, start, end, rect_regions,
-                                                       output_name, self.processing_type, self.aggregation_type)
+                        self.pipeline.run_area_process(ds, predictors, start, end, rect_regions,
+                                                       output_name, self.geometry_mode, self.aggregation_type)
                 case _:
-                    self.pipeline.run_area_process(ds, preds, start, end, rect_regions,
-                                                   output_name, self.processing_type, self.aggregation_type)
+                    self.pipeline.run_area_process(ds, predictors, start, end, rect_regions,
+                                                   output_name, self.geometry_mode, self.aggregation_type)
 
     @staticmethod
     def _generate_region_id(region: list[float], geometry_idx: int) -> str:
@@ -245,8 +272,8 @@ class CommandExecutor:
         Cleaning, parsing, filling all variables passed through the config file.
         """
         # Disallow aggregation when requesting global/world data (coords_dir=None)
-        agg = getattr(self, "aggregation_type", None)
-        if self.coords_dir is None and (agg is not None and str(agg).strip().lower() not in {"", "none"}):
+        aggregation = getattr(self, "aggregation_type", None)
+        if self.geometries_dir is None and (aggregation is not None and str(aggregation).strip().lower() not in {"", "none"}):
             raise ValueError(
                 "Aggregation is not supported when `coords_dir` is None (global/world extraction). "
                 "Provide `coords_dir` with geometries or set `aggregation_type` to None."
@@ -255,41 +282,41 @@ class CommandExecutor:
         # Check the dates
         if self._validate_date_range():
             # Make a list out of the predictors
-            current_preds = list(self.preds or [])
+            requested_predictors = list(self.predictors or [])
 
             # If the requested date are out of bounds for the CO2 dataset
-            co2_start_date = 2002
-            co2_end_date = 2023
-            if "CO2" in current_preds:
+            co2_start_year = 2002
+            co2_end_year = 2023
+            if "CO2" in requested_predictors:
                 start = self._parse_datetime(self.start)
                 end = self._parse_datetime(self.end)
 
-                if start.year < co2_start_date or end.year > co2_end_date:
+                if start.year < co2_start_year or end.year > co2_end_year:
                     print("Removing the CO2 predictors from the list because it is out of bounds for"
-                          f"the requested start and end date (before {co2_start_date} or after {co2_end_date}).", flush=True)
-                    current_preds.remove("CO2")
+                          f"the requested start and end date (before {co2_start_year} or after {co2_end_year}).", flush=True)
+                    requested_predictors.remove("CO2")
 
             # Check if any is not supported
-            invalid = [p for p in current_preds if p not in VARIABLES_FOR_PREDICTOR]
+            invalid = [p for p in requested_predictors if p not in VARIABLES_FOR_PREDICTOR]
             if invalid:
                 raise ValueError(f"Invalid predictors: {invalid}.\nConsult the README for the available predictors.")
 
-            if not current_preds: # Case if no predictors has been specified in the config file
-                self.vars = ERA5_VARIABLES
-                self.preds = list(VARIABLES_FOR_PREDICTOR)
+            if not requested_predictors: # Case if no predictors has been specified in the config file
+                self.era5_vars = ERA5_VARIABLES
+                self.predictors = list(VARIABLES_FOR_PREDICTOR)
             else:
-                self.vars = list({var for pred in current_preds for var in VARIABLES_FOR_PREDICTOR[pred]})
-                self.preds = current_preds
+                self.era5_vars = list({var for pred in requested_predictors for var in VARIABLES_FOR_PREDICTOR[pred]})
+                self.predictors = requested_predictors
 
-            self.special_preds = SpecialPredictors(predictors=self.preds)
+            self.special_preds = SpecialPredictors(predictors=self.predictors)
 
-            if "xco2" in self.vars:
-                self.vars.remove("xco2") # If we don't do that, the ERA5 request will fail because xco2 doesn't exist within this particular dataset
-            if "wtd" in self.vars:
-                self.vars.remove("wtd") # Same here
+            if "xco2" in self.era5_vars:
+                self.era5_vars.remove("xco2") # If we don't do that, the ERA5 request will fail because xco2 doesn't exist within this particular dataset
+            if "wtd" in self.era5_vars:
+                self.era5_vars.remove("wtd") # Same here
 
             # Verify if location was provided and if CO2 and WTD are not available for EC Stations data query
-            if self.data_file:
+            if self.ameriflux_csv:
                 if not self.location:
                     raise CommandExecutorError("No location has been provided for the EC tower. Please modify the "
                                                "config file such that [latitude, longitude] is in the location"
@@ -297,12 +324,12 @@ class CommandExecutor:
 
                 removed = []
                 for special_pred in ["CO2", "WTD"]:
-                    if special_pred in self.preds:
+                    if special_pred in self.predictors:
                         if special_pred == "CO2":
                             self.special_preds.requires_co2_data = False
                         else:  # must be "WTD"
                             self.special_preds.requires_wtd_data = False
-                        self.preds.remove(special_pred)
+                        self.predictors.remove(special_pred)
                         removed.append(special_pred)
 
                 if removed:
@@ -310,37 +337,45 @@ class CommandExecutor:
                     print("Removing it/them.")
 
             # If CSV file is given
-            if self.coords_dir is None and self.data_file is not None:
+            if self.geometries_dir is None and self.ameriflux_csv is not None:
                 geometry = Geometry(data=self.location)
                 geometry.validate_coordinates()
-                geometry.rect_region = GeometryProcessor.process_geometry(geometry)
+                geometry.bbox = GeometryProcessor.process_geometry(geometry)
            
                 self.all_geometries = {0: geometry}
-                self.processing_type = ProcessingType.SITE
+                self.geometry_mode = ProcessingType.SITE
+
             # Default
-            elif self.coords_dir is None and self.data_file is None:
+            elif self.geometries_dir is None and self.ameriflux_csv is None:
+                if self.area is None:
+                    raise CommandExecutorError(
+                        "No area provided. When geometries-directory and data-file are both None, "
+                        "you must set `bbox-coordinate: [N, W, S, E]` in the config."
+                    )
                 geometry = Geometry()
-                geometry.rect_region = self.area
+                geometry.bbox = self.area
                 self.all_geometries = {0: geometry}
-                self.processing_type = ProcessingType.AREA
+                self.geometry_mode = ProcessingType.AREA
+
             # If directory with GeoJSONS is given
-            elif self.coords_dir is not None and self.data_file is None:
+            elif self.geometries_dir is not None and self.ameriflux_csv is None:
                 self.all_geometries = self._parse_geojsons()
 
                 for _, geometry in self.all_geometries.items():
-                    geometry.rect_region = GeometryProcessor.process_geometry(geometry)
+                    geometry.bbox = GeometryProcessor.process_geometry(geometry)
 
                 geometry = Geometry()
-                geometry.rect_region = self._find_covering_regions(list(self.all_geometries.values()))
+                geometry.bbox = self.compute_covering_bbox(list(self.all_geometries.values()))
                 self.bounding_boxes_geometry[geometry] = {
-                    id_geo: geo.rect_region
+                    id_geo: geo.bbox
                     for id_geo, geo in self.all_geometries.items()
                 }
-                self.processing_type = ProcessingType.BOXES  # let know the pipeline to download in the manifest
+                self.geometry_mode = ProcessingType.BOXES  # let know the pipeline to download in the manifest
 
 
     @staticmethod
     def _parse_datetime(value):
+        """Parse datetime from config into a datetime object."""
         if isinstance(value, str):
             return datetime.strptime(value, "%Y-%m-%d %H:%M:%S")
         elif isinstance(value, datetime):
@@ -349,6 +384,7 @@ class CommandExecutor:
             raise TypeError(f"Unsupported type for datetime parsing: {type(value)}")
 
     def _validate_date_range(self):
+        """Validate that start/end are ordered and match aggregation rules."""
         # Clean the dates
         start = self._parse_datetime(self.start)
         end = self._parse_datetime(self.end)
@@ -395,7 +431,7 @@ class CommandExecutor:
         """
         Parse the coordinate input provided by the user.
         """
-        path = Path(self.coords_dir)
+        path = Path(self.geometries_dir)
 
         # If the provided path is a directory
         geometries_per_file: dict[str | int, Geometry] = {}
@@ -429,7 +465,8 @@ class CommandExecutor:
                 raise ValueError(f"No valid GeoJSON files found in directory: {path}")
         return geometries_per_file
 
-    def _find_covering_regions(self, geometries: list[Geometry]) -> list[float]:
+    def compute_covering_bbox(self, geometries: list[Geometry]) -> list[float]:
+        """Build a single bounding box covering all given geometries."""
         rects = self._all_rect_regions(geometries)
 
         if not rects:
@@ -443,8 +480,9 @@ class CommandExecutor:
 
     @staticmethod
     def _all_rect_regions(geometries: list[Geometry]):
+        """Return rect regions for all geometries."""
         return [
-            g.rect_region
+            g.bbox
             for g in geometries
         ]
 
@@ -452,39 +490,40 @@ class CommandExecutor:
         """Download ERA5 data for a EC station. Runs sequentially to avoid CDS conflicts."""
         print(f"⬇️ Downloading ERA5 data for {region_id}...")
         await self.pipeline.run_download_point(
-            coords_to_download=region,
+            download_bbox=region,
             region_id=region_id,
             geometry=geometry,
             start=self.start,
             end=self.end,
-            preds=self.preds,
-            vrs=self.vars,
+            predictors=self.predictors,
+            era5_vars=self.era5_vars,
             gapfilling=gapfilling,
-            data_file=self.data_file
+            ameriflux_csv=self.ameriflux_csv,
+            manifest_path=self.manifest_path
         )
 
-    async def _download_for_region(self, geometry, region, region_id, regions_to_process: dict[str | int, list[float]]):
+    async def _download_for_region(self, geometry, region, region_id, region_bboxes: dict[str | int, list[float]]):
         """Download ERA5 data for a single region. Runs sequentially to avoid CDS conflicts."""
         print(f"⬇️ Downloading ERA5 data for {region_id}...")
         await self.pipeline.run_download_area(
-            coords_to_download=region,
+            download_bbox=region,
             region_id=region_id,
             geometry=geometry,
             start=self.start,
             end=self.end,
-            preds=self.preds,
-            vrs=self.vars,
-            regions_to_process=regions_to_process,
-            processing_type=self.processing_type.value,
-            aggregation_type=self.aggregation_type
+            predictors=self.predictors,
+            era5_vars=self.era5_vars,
+            region_bboxes=region_bboxes,
+            geometry_mode=self.geometry_mode.value,
+            aggregation_type=self.aggregation_type,
+            manifest_path=self.manifest_path,
         )
                 
 
 async def main():
-    parser = ArgumentParserManager.build_parser()
-    args = parser.parse_args()
-
+    args = ArgumentParserManager.build_parser().parse_args()
     config = ArgumentParserManager.load_yaml_config(args.config)
+    
     ce = CommandExecutor(config_dict=config)
 
     if ce.action == "process":

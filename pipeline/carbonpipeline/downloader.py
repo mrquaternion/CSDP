@@ -1,20 +1,21 @@
-# carbonpipeline/downloader.py
+"""Download utilities for ERA5, CO2, and WTD datasets."""
 import asyncio
-import sys
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
 import os
+from pathlib import Path
 import zipfile
 from bs4 import BeautifulSoup
 import pandas as pd
 import requests
 from tqdm import tqdm
 
-from .api_request import CO2_FOLDERNAME, APIRequest
+from .api_request import APIRequest
 from .config import CarbonPipelineConfig
 
 
 class DataDownloaderError(Exception):
+    """Raised when a download-related workflow cannot proceed."""
     def __init__(self, message: str) -> None:
         super().__init__(message)
         self.message = message
@@ -29,37 +30,33 @@ class DataDownloader:
     def __init__(self, config: CarbonPipelineConfig):
         self.config = config
     
-    async def download_co2_data(self) -> None:
+    async def download_co2_data(self, path: str | Path) -> None:
         """Download CO2 data asynchronously."""
         loop = asyncio.get_running_loop()
-        await loop.run_in_executor(None, self._download_co2_sync)
-    
-    def _download_co2_sync(self) -> None:
+        await loop.run_in_executor(None, self._download_co2_sync, path)
+
+    async def download_wtd_data(self, start_date: str, end_date: str, path: str | Path) -> None:
+        """Download WTD data asynchronously (via web scraping)."""
+        loop = asyncio.get_running_loop()
+        await loop.run_in_executor(None, self._web_scraping_wtd_sync, start_date, end_date, path)
+
+    def _download_co2_sync(self, unzip_path: str | Path) -> None:
         """Synchronous CO2 download helper."""
         APIRequest.query_co2(self.config.ZIP_DIR)
-        zip_fp = os.path.join(self.config.ZIP_DIR, f"{CO2_FOLDERNAME}.zip")
-        unzip_fp = os.path.join(self.config.UNZIP_DIR, CO2_FOLDERNAME)
-        self._extract_zip(zip_fp, unzip_fp)
-        print("\nCO2 data downloaded and extracted.")
+        zip_path = Path(f"{self.config.ZIP_DIR}/{self.config.CO2_FOLDERNAME}.zip")
+        self._extract_zip(zip_path, unzip_path)
 
-    async def download_wtd_data(self, start_date: str, end_date: str, dir_: str) -> None:
-        """Web scraping for WTD data asynchronously."""
-        loop = asyncio.get_running_loop()
-        print("Starting WTD web scraping...")
-        await loop.run_in_executor(None, self._web_scraping_wtd_sync, start_date, end_date, dir_)
-        print("WTD data download complete.")
-    
-    def _web_scraping_wtd_sync(self, start_date: str, end_date: str, dir_: str) -> None:
+    def _web_scraping_wtd_sync(self, start_date: str, end_date: str, unzip_path: str | Path) -> None:
         """Synchronous WTD web scraping helper."""
-        response = requests.get(self.config.WTD_URL)
-        response.raise_for_status()
-        html_content = response.text
-        soup = BeautifulSoup(html_content, "html.parser")
+        index_response = requests.get(self.config.WTD_URL)
+        index_response.raise_for_status()
+        html_text = index_response.text
+        soup = BeautifulSoup(html_text, "html.parser")
 
-        links = soup.find_all('a')
+        anchors = soup.find_all("a")
 
         date_to_filename = {}
-        for link in links:
+        for link in anchors:
             href = link.get("href")
             if href and ".tif" in href and "-bot-" not in href:
                 try:
@@ -70,18 +67,23 @@ class DataDownloader:
                 except (ValueError, IndexError):
                     continue
 
-        os.makedirs(dir_)
-
         hrs = pd.date_range(start=start_date, end=end_date, freq="h")
         month_ends = {hr.to_period("M").to_timestamp(how="end").normalize() for hr in hrs}
 
-        fns_to_download = {date_to_filename[d] for d in month_ends if d in date_to_filename}
-        list_of_url_filename_pairs = [(self.config.WTD_URL + fn, os.path.join(dir_, fn)) for fn in fns_to_download]
-        
+        filenames_to_download = {date_to_filename[d] for d in month_ends if d in date_to_filename}
+        list_of_url_filename_pairs = [
+            (self.config.WTD_URL + filename, os.path.join(unzip_path, filename))
+            for filename in filenames_to_download
+        ]
+
         if not list_of_url_filename_pairs:
-            raise DataDownloaderError("No WTD files found for the specified date range. Please remove "
-                                      "this predictor from the config file or visit the available dates here: "
-                                      "https://geo.public.data.uu.nl/vault-globgm/research-globgm%5B1669042611%5D/original/output/version_1.0/transient_1958-2015/")
+            raise DataDownloaderError(
+                "No WTD files found for the specified date range. Please remove "
+                "this predictor from the config file or visit the available dates here: "
+                "https://geo.public.data.uu.nl/vault-globgm/research-globgm%5B1669042611%5D/original/output/version_1.0/transient_1958-2015/"
+            )
+
+        os.makedirs(unzip_path, exist_ok=True)
 
         with ThreadPoolExecutor(max_workers=4) as executor:
             list(
@@ -96,7 +98,7 @@ class DataDownloader:
             )
 
     def _download_tif_with_progress(self, url_filename) -> None:
-        """Download TIF file with progress bar."""
+        """Download a single TIF file."""
         url, filename = url_filename
         
         try:
@@ -111,51 +113,60 @@ class DataDownloader:
         except requests.exceptions.RequestException as e:
             print(f"Failed to download {url}: {e}")
 
-    async def download_groups_async(
+    async def download_request_groups_async(
         self,
         groups: list[tuple],
-        vars_: list[str],
+        era5_vars: list[str],
         coords: list[float],
         monthly: bool,
         region_id: str = None
     ) -> list[str]:
-        """Asynchronous wrapper for download_groups using a background thread."""
+        """Asynchronous wrapper for request-group downloads."""
         loop = asyncio.get_running_loop()
-        return await loop.run_in_executor(None, self._download_groups, groups, vars_, coords, monthly, region_id)
+        return await loop.run_in_executor(
+            None,
+            self._download_request_groups,
+            groups,
+            era5_vars,
+            coords,
+            monthly,
+            region_id,
+        )
 
-    def _download_groups(
+    def _download_request_groups(
         self,
         groups: list[tuple],
-        vars_: list[str],
+        era5_vars: list[str],
         coords: list[float],
         monthly: bool,
         region_id: str = None
     ) -> list[str]:
-        """Download data for multiple groups."""
-        fldrs = [] 
+        """Download data for multiple request groups."""
+        unzip_dirs = [] 
         for group in tqdm(groups, desc="Downloading hourly data", unit="group", colour="green"):
-            fname = self._prepare_group_request(group, self.config.ZIP_DIR, coords, vars_, monthly)
-            if fname:
-                zip_fp = os.path.join(self.config.ZIP_DIR, fname)
+            zip_name = self._prepare_group_request(group, self.config.ZIP_DIR, coords, era5_vars, monthly)
+            if zip_name:
+                zip_fp = os.path.join(self.config.ZIP_DIR, zip_name)
 
                 # Create region-specific unzip directory
                 if region_id:
-                    base_unzip_dir = os.path.join(self.config.UNZIP_DIR, region_id)
+                    base_unzip_dir = os.path.join(self.config.ERA5_DIR, region_id)
                     os.makedirs(base_unzip_dir, exist_ok=True)
-                    unzip_fp = os.path.join(base_unzip_dir, fname.split('.')[0])
+                    unzip_fp = os.path.join(base_unzip_dir, zip_name.split(".")[0])
                 else:
-                    unzip_fp = os.path.join(self.config.UNZIP_DIR, fname.split('.')[0])
+                    os.makedirs(self.config.ERA5_DIR, exist_ok=True)
+                    unzip_fp = os.path.join(self.config.ERA5_DIR, zip_name.split(".")[0])
 
-                fldrs.append(unzip_fp)
+                unzip_dirs.append(unzip_fp)
                 self._extract_zip(zip_fp, unzip_fp)
-        return fldrs
+        return unzip_dirs
 
     @staticmethod
     def _prepare_group_request(
         group: tuple,
         dir_: str,
         coords: list[float],
-        vars_: list[str],
+        era5_vars: list[str],
         monthly: bool
     ) -> str:
         """
@@ -170,7 +181,7 @@ class DataDownloader:
             days=days,       # now a list
             times=hours,     # now a list
             coords=coords,
-            vars_=vars_,
+            era5_vars=era5_vars,
             monthly=monthly
         )
 
