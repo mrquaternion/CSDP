@@ -7,7 +7,6 @@ dependencies:
   - pandas=2.3.3
   - xarray
   - netcdf4
-  - eccodes
   - rioxarray
   - dask
   - numexpr

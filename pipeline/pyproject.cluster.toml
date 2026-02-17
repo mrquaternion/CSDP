@@ -9,15 +9,11 @@ dependencies = [
     "numpy",
     "pandas",
     "numexpr",
-    "ipykernel",
     "netCDF4",
     "beautifulsoup4",
     "pyyaml",
     "rioxarray",
-    "dask",
-    "flask",
-    "flask-wtf",
-    "pexpect"
+    "dask"
 ]
 
 [project.scripts]

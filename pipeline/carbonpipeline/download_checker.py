@@ -3,8 +3,10 @@
 import argparse
 from dataclasses import dataclass
 from enum import Enum
+from pathlib import Path
 
 from .argparser import ArgumentParserManager
+from .config import CarbonPipelineConfig
 
 
 class DownloadErrorCode(Enum):
@@ -41,8 +43,9 @@ class SourceStatus:
 class DownloadPresenceChecker:
     """Verify if data has already been downloaded for the given predictors and time range."""
 
-    def __init__(self):
+    def __init__(self, config_path: str | None = None):
         self.status: list[SourceStatus] = []
+        self.config_path = config_path
 
     def validate(self) -> list[SourceStatus]:
         self._validate_era5()
@@ -51,13 +54,40 @@ class DownloadPresenceChecker:
         return self.status
 
     def _validate_era5(self):
-        pass
+        era5_dir = Path(CarbonPipelineConfig.ERA5_DIR).resolve()
+        has_data = era5_dir.exists() and any(era5_dir.rglob("*.nc"))
+        self.status.append(
+            SourceStatus(
+                data_source=DataSource.ERA5,
+                error_code=DownloadErrorCode.ERA5_ALREADY_DOWNLOADED,
+                is_downloaded=has_data,
+                absolute_path=str(era5_dir),
+            )
+        )
 
     def _validate_co2(self):
-        pass
+        co2_dir = Path(CarbonPipelineConfig.CO2_DIR).resolve()
+        has_data = co2_dir.exists() and any(co2_dir.rglob("*"))
+        self.status.append(
+            SourceStatus(
+                data_source=DataSource.CO2,
+                error_code=DownloadErrorCode.CO2_ALREADY_DOWNLOADED,
+                is_downloaded=has_data,
+                absolute_path=str(co2_dir),
+            )
+        )
 
     def _validate_wtd(self):
-        pass
+        wtd_dir = Path(CarbonPipelineConfig.WTD_DIR).resolve()
+        has_data = wtd_dir.exists() and any(wtd_dir.rglob("*.tif"))
+        self.status.append(
+            SourceStatus(
+                data_source=DataSource.WTD,
+                error_code=DownloadErrorCode.WTD_ALREADY_DOWNLOADED,
+                is_downloaded=has_data,
+                absolute_path=str(wtd_dir),
+            )
+        )
 
 
 def _build_parser() -> argparse.ArgumentParser:
@@ -72,8 +102,9 @@ def _build_parser() -> argparse.ArgumentParser:
 def main() -> int:
     args = _build_parser().parse_args()
     config = ArgumentParserManager.load_yaml_config(args.config)
-    
-    validator = DownloadPresenceChecker()
+    del config
+
+    validator = DownloadPresenceChecker(config_path=args.config)
 
     status = validator.validate()
 

@@ -136,6 +136,11 @@ label {
   opacity: 1;
 }
 
+.field-error-compact {
+  margin: -8px 0 0;
+  min-height: 0;
+}
+
 .input:focus {
   border-color: var(--accent);
   box-shadow: 0 0 0 4px var(--ring);
@@ -167,6 +172,12 @@ label {
 }
 
 .checkbox-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: 10px 14px;
+}
+
+.checkbox-grid-no-toggle {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
   gap: 10px 14px;

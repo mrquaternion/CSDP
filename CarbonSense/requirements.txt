@@ -1,0 +1,17 @@
+git+https://github.com/mjfortier/EcoPerceiver.git
+PyYAML==6.0.2
+tensorboard==2.13.0
+timm==0.6.11
+transformers==4.36.2
+tqdm==4.67.0
+jupyter==1.0.0
+matplotlib==3.8.2
+seaborn==0.13.2
+scikit-image==0.20.0
+scikit-learn==1.2.2
+scipy==1.11.4
+xgboost==2.0.3
+rasterio==1.4.3
+shapely==2.0.3
+geopandas==0.12.2
+pyproj==3.6.1

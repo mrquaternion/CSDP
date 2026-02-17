@@ -8,8 +8,12 @@ pipeline/datasets/
 pipeline/manifests
 pipeline/outputs/
 pipeline/outputs_tmp/
+pipeline/config/postprocess_job.generated.sh
+pipeline/config/config.yml
+pipeline/config/process_config.yml
 EcoPerceiver/experiments/
 EcoPerceiver/runs/
+visualization/
 
 # Python bytecode
 __pycache__/

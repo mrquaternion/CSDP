@@ -142,40 +142,52 @@ class DataDownloader:
         region_id: str = None
     ) -> list[str]:
         """Download data for multiple request groups."""
-        unzip_dirs = [] 
+        unzip_dirs = []
         for group in tqdm(groups, desc="Downloading hourly data", unit="group", colour="green"):
-            zip_name = self._prepare_group_request(group, self.config.ZIP_DIR, coords, era5_vars, monthly)
-            if zip_name:
-                zip_fp = os.path.join(self.config.ZIP_DIR, zip_name)
+            request = self._build_group_request(group, coords, era5_vars, monthly)
+            zip_name = request.expected_filename()
+            zip_fp = os.path.join(self.config.ZIP_DIR, zip_name)
 
-                # Create region-specific unzip directory
-                if region_id:
-                    base_unzip_dir = os.path.join(self.config.ERA5_DIR, region_id)
-                    os.makedirs(base_unzip_dir, exist_ok=True)
-                    unzip_fp = os.path.join(base_unzip_dir, zip_name.split(".")[0])
-                else:
-                    os.makedirs(self.config.ERA5_DIR, exist_ok=True)
-                    unzip_fp = os.path.join(self.config.ERA5_DIR, zip_name.split(".")[0])
+            # Create region-specific unzip directory
+            if region_id:
+                base_unzip_dir = os.path.join(self.config.ERA5_DIR, region_id)
+                os.makedirs(base_unzip_dir, exist_ok=True)
+                unzip_fp = os.path.join(base_unzip_dir, zip_name.split(".")[0])
+            else:
+                os.makedirs(self.config.ERA5_DIR, exist_ok=True)
+                unzip_fp = os.path.join(self.config.ERA5_DIR, zip_name.split(".")[0])
 
-                unzip_dirs.append(unzip_fp)
+            unzip_dirs.append(unzip_fp)
+
+            # Skip downloading this chunk if the extracted directory already exists and has data.
+            if os.path.isdir(unzip_fp) and os.listdir(unzip_fp):
+                print(f"Skipping existing ERA5 chunk: {unzip_fp}")
+                continue
+
+            if os.path.exists(zip_fp):
                 self._extract_zip(zip_fp, unzip_fp)
+                continue
+
+            downloaded_zip_name = request.query(self.config.ZIP_DIR)
+            if downloaded_zip_name:
+                downloaded_zip_fp = os.path.join(self.config.ZIP_DIR, downloaded_zip_name)
+                self._extract_zip(downloaded_zip_fp, unzip_fp)
         return unzip_dirs
 
     @staticmethod
-    def _prepare_group_request(
+    def _build_group_request(
         group: tuple,
-        dir_: str,
         coords: list[float],
         era5_vars: list[str],
         monthly: bool
-    ) -> str:
+    ) -> APIRequest:
         """
-        Queries data for a specific date range and location, then downloads the results.
+        Build an ERA5 API request for a specific date range and location.
         Group is in the form (year, months, days, hours).
         """
         Y, M, days, hours = group
 
-        request = APIRequest(
+        return APIRequest(
             year=Y,
             months=M,        # can be a list
             days=days,       # now a list
@@ -184,8 +196,6 @@ class DataDownloader:
             era5_vars=era5_vars,
             monthly=monthly
         )
-
-        return request.query(dir_)
 
     @staticmethod
     def _extract_zip(zip_fp: str, unzip_fp: str) -> None:

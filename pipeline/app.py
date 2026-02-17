@@ -1,15 +1,12 @@
-import threading
-
 from datetime import date, datetime, time
-from flask import Flask, jsonify, render_template, redirect, url_for, session
-
-from file_transfer import file_transfer
+from flask import Flask, render_template, redirect, url_for, session
 from app_forms import AreaTypePointForm, AreaTypeBoundingBoxForm, AreaTypePolygonsForm, CredentialsForm
+from monitoring import monitoring_bp
 
 
 # ================== App Config ==================
-
 app = Flask(__name__)
+app.register_blueprint(monitoring_bp)
 app.config['SECRET_KEY'] = 'mysecret'
 
 STEPS = ['Query Type', 'Area Type', 'Configuration', 'Credentials', 'Remote Monitoring']
@@ -18,13 +15,6 @@ QUERY_TYPES = {
     'download_process': {'label': 'Download and Process Data', 'allowed_area_types': {'point', 'bbox', 'polygons'}},
     'gas_flux_predictions': {'label': 'Gas Flux Predictions', 'allowed_area_types': {'bbox', 'polygons'}},
 }
-
-TRANSFER_STATE = {
-    'running': False,
-    'output': '',
-    'error': '',
-}
-TRANSFER_LOCK = threading.Lock()
 
 
 # ================== App Routes ==================
@@ -38,6 +28,7 @@ def _to_session_safe(data):
     return safe_data
 
 
+# ===== ROUTE 1 =====
 @app.route('/')
 def index():
     return redirect(url_for('query_type'))
@@ -60,6 +51,7 @@ def select_query_type(query_type):
     return redirect(url_for('area_type'))
 
 
+# ===== ROUTE 2 =====
 @app.route('/area-type')
 def area_type():
     """
@@ -79,6 +71,7 @@ def area_type():
     )
 
 
+# ===== ROUTE 3 =====
 @app.route('/configuration/<area_type>', methods=['GET', 'POST'])
 def configuration(area_type):
     """
@@ -91,7 +84,7 @@ def configuration(area_type):
 
     allowed_area_types = QUERY_TYPES[query_type]['allowed_area_types']
     if area_type not in allowed_area_types:
-        return 'Invalid area type', 404
+        return redirect(url_for('area_type'))
 
     match area_type:
         case 'point':
@@ -103,11 +96,13 @@ def configuration(area_type):
 
     if form.validate_on_submit():
         session['configuration_data'] = _to_session_safe(form.data)
+        print(session['configuration_data'])
         return redirect(url_for('credentials'))
 
     return render_template('configuration.html', template_form=form, area_type=area_type)
 
  
+ # ===== ROUTE 4 =====
 @app.route('/credentials', methods=['GET', 'POST'])
 def credentials():
     """
@@ -122,50 +117,12 @@ def credentials():
     return render_template('credentials.html', template_form=form)
 
 
-# ================== Monitoring ==================
+# ===== ROUTE 5 =====
 @app.route('/remote-monitoring', methods=['GET'])
 def monitoring():
-    return render_template('remote_monitoring.html')
-
-
-def _run_transfer(account: str):
-    try:
-        output = file_transfer(account) or ''
-        error = ''
-    except Exception as exc:
-        output = ''
-        error = str(exc)
-
-    with TRANSFER_LOCK:
-        TRANSFER_STATE['running'] = False
-        TRANSFER_STATE['output'] = output
-        TRANSFER_STATE['error'] = error
-
-
-@app.route('/remote-monitoring/start', methods=['POST'])
-def start_monitoring():
-    account = session.get('account')
-    if not account:
-        return jsonify({'ok': False, 'error': 'Missing account in session.'}), 400
-
-    with TRANSFER_LOCK:
-        if TRANSFER_STATE['running']:
-            return jsonify({'ok': True, 'running': True})
-
-        TRANSFER_STATE['running'] = True
-        TRANSFER_STATE['output'] = ''
-        TRANSFER_STATE['error'] = ''
-
-    thread = threading.Thread(target=_run_transfer, args=(account,), daemon=True)
-    thread.start()
-    return jsonify({'ok': True, 'running': True})
-
-
-@app.route('/remote-monitoring/status', methods=['GET'])
-def monitoring_status():
-    with TRANSFER_LOCK:
-        return jsonify({
-            'running': TRANSFER_STATE['running'],
-            'output': TRANSFER_STATE['output'],
-            'error': TRANSFER_STATE['error'],
-        })
+    account = session.get('account', '')
+    slurm_account_default = account.split('@', 1)[0] if account else ''
+    return render_template(
+        'remote_monitoring.html',
+        slurm_account_default=slurm_account_default,
+    )

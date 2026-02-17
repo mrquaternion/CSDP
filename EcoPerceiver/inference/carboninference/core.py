@@ -4,7 +4,6 @@ import torch as tr
 import numpy as np
 import pandas as pd
 from torch.utils.data import Dataset
-from .constants import *
 from pathlib import Path
 from typing import Union
 from tqdm import tqdm
@@ -79,9 +78,11 @@ class ERA5Dataset(Dataset):
         preds, targs, aux = preds[0], targs[0], aux[0]
         predictor_values = tr.stack(pred_data, dim=0)
         aux_values = tr.stack(aux_data, dim=0)
+        batch_size = predictor_values.shape[0]
+        empty_modalities = tuple(() for _ in range(batch_size))
 
         return EcoPerceiverBatch(
-            sites=('',), 
+            sites=tuple('' for _ in range(batch_size)),
             igbp=igbp,
             timestamps=ts,
             predictor_columns=preds,
@@ -90,7 +91,7 @@ class ERA5Dataset(Dataset):
             aux_values=aux_values,
             target_columns=targs, 
             target_values=None,
-            modis=(), 
-            phenocam_ir=(), 
-            phenocam_rgb=()
+            modis=empty_modalities,
+            phenocam_ir=empty_modalities,
+            phenocam_rgb=empty_modalities
         )

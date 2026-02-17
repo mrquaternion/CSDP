@@ -40,6 +40,7 @@
                         {{ template_form.end_time(type="text", class="input", placeholder="HH:MM", inputmode="numeric", maxlength="5", id="end_time", **{"aria-label": "End time"}) }}
                     </div>
                 </div>
+                <p class="field-error field-error-compact" id="datetime-range-error" aria-live="polite"></p>
 
                 <div class="field">
                     {{ template_form.predictors.label }}
@@ -80,7 +81,7 @@
                                 <p class="field-error" id="latitude-error" aria-live="polite"></p>
                             </div>
                         </div>
-                        
+
                         <div class="field-no-label">
                             {{ template_form.longitude(type="text", class="input", placeholder="Longitude (e.g. -110.06)", id="longitude", inputmode="decimal") }}
                             <p class="field-error" id="longitude-error" aria-live="polite"></p>
@@ -88,6 +89,18 @@
                     </div>
 
                 {% elif area_type == 'bbox' %}
+                    <div class="field">
+                        {{ template_form.aggregation_type.label }}
+                        <p class="choice-note">Choose an aggregation option if you want the data grouped</p>
+                        <div class="checkbox-grid-no-toggle">
+                            {% for subfield in template_form.aggregation_type %}
+                                <label class="checkbox">
+                                    {{ subfield() }}
+                                    <span>{{ subfield.label.text }}</span>
+                                </label>
+                            {% endfor %}
+                        </div>
+                    </div>
                     <div class="grid-4 grid-coordinates">
                         <div class="field">
                             {{ template_form.north.label }}
@@ -124,11 +137,22 @@
                         {% endif %}
                     </div>
                     <div class="field">
+                        {{ template_form.aggregation_type.label }}
+                        <p class="choice-note">Choose an aggregation option if you want the data grouped</p>
+                        <div class="checkbox-grid-no-toggle">
+                            {% for subfield in template_form.aggregation_type %}
+                                <label class="checkbox">
+                                    {{ subfield() }}
+                                    <span>{{ subfield.label.text }}</span>
+                                </label>
+                            {% endfor %}
+                        </div>
+                    </div>
+                    <div class="field">
                         {{ template_form.rid.label }}
                         <p class="choice-note">If you need to map the output bounding boxes to your original polygons</p>
                         {{ template_form.rid(type="text", class="input", placeholder="e.g. GID") }}
                     </div>
-
                 {% endif %}
 
                 <div class="actions">

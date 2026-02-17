@@ -1,8 +1,10 @@
 document.addEventListener("DOMContentLoaded", () => {
+  const form = document.querySelector("form.form");
   const startDate = document.getElementById("start_date");
   const endDate = document.getElementById("end_date");
   const startTime = document.getElementById("start_time");
   const endTime = document.getElementById("end_time");
+  const datetimeRangeError = document.getElementById("datetime-range-error");
 
   const toggleAll = document.getElementById("toggle-all");
   const predictorInputs = document.querySelectorAll(
@@ -189,39 +191,56 @@ document.addEventListener("DOMContentLoaded", () => {
     return true;
   }
 
-  function updateCoordinateValidity() {
+  function parseDateTime(dateValue, timeValue) {
+    const datePattern = /^\d{4}-\d{2}-\d{2}$/;
+    const timePattern = /^\d{2}:\d{2}$/;
+    if (!datePattern.test(dateValue) || !timePattern.test(timeValue)) {
+      return null;
+    }
+
+    const parsed = new Date(`${dateValue}T${timeValue}:00`);
+    if (Number.isNaN(parsed.getTime())) {
+      return null;
+    }
+    return parsed;
+  }
+
+  function validateDateTimeOrder() {
+    if (!startDate || !endDate || !startTime || !endTime) return true;
+
+    const startValue = parseDateTime(startDate.value.trim(), startTime.value.trim());
+    const endValue = parseDateTime(endDate.value.trim(), endTime.value.trim());
+
+    if (!startValue || !endValue) {
+      setError(datetimeRangeError, "");
+      return true;
+    }
+
+    if (endValue < startValue) {
+      setError(datetimeRangeError, "End date/time must be after or equal to start date/time.");
+      return false;
+    }
+
+    setError(datetimeRangeError, "");
+    return true;
+  }
+
+  function updateFormValidity() {
     const latOk = validateCoordinate(latitude, latitudeError, -90, 90);
     const lonOk = validateCoordinate(longitude, longitudeError, -180, 180);
     const northOk = validateCoordinate(north, northError, -90, 90);
     const southOk = validateCoordinate(south, southError, -90, 90);
     const westOk = validateCoordinate(west, westError, -180, 180);
     const eastOk = validateCoordinate(east, eastError, -180, 180);
-    const latRangeOk = validateCoordinateOrder(
-      north,
-      south,
-      latitudeRangeError,
-      "North",
-      "South"
-    );
-    const lonRangeOk = validateCoordinateOrder(
-      east,
-      west,
-      longitudeRangeError,
-      "East",
-      "West"
-    );
+    const latRangeOk = validateCoordinateOrder(north, south, latitudeRangeError, "North", "South");
+    const lonRangeOk = validateCoordinateOrder(east, west, longitudeRangeError, "East", "West");
+    const datetimeOk = validateDateTimeOrder();
 
-    const allOk =
-      latOk &&
-      lonOk &&
-      northOk &&
-      southOk &&
-      westOk &&
-      eastOk &&
-      latRangeOk &&
-      lonRangeOk;
+    const allOk = latOk && lonOk && northOk && southOk &&
+      westOk && eastOk && latRangeOk && lonRangeOk && datetimeOk;
 
     if (submitButton) submitButton.disabled = !allOk;
+    return allOk;
   }
 
   maskNonDigit(startDate);
@@ -239,13 +258,31 @@ document.addEventListener("DOMContentLoaded", () => {
     Boolean
   );
 
+  const datetimeInputs = [startDate, endDate, startTime, endTime].filter(Boolean);
+
+  updateFormValidity();
+
   if (coordinateInputs.length) {
-    updateCoordinateValidity();
     coordinateInputs.forEach((input) => {
       input.addEventListener("input", () => {
         normalizeCoordinate(input);
-        updateCoordinateValidity();
+        updateFormValidity();
       });
+    });
+  }
+
+  if (datetimeInputs.length) {
+    datetimeInputs.forEach((input) => {
+      input.addEventListener("input", updateFormValidity);
+      input.addEventListener("change", updateFormValidity);
+    });
+  }
+
+  if (form) {
+    form.addEventListener("submit", (event) => {
+      if (!updateFormValidity()) {
+        event.preventDefault();
+      }
     });
   }
 });

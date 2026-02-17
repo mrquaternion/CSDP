@@ -3,16 +3,18 @@ import yaml
 from torch.utils.data import DataLoader
 from pathlib import Path
 from ecoperceiver.dataset import EcoPerceiverLoaderConfig
-from carboninference.core import ERA5Dataset
+from ecoperceiver.era5_dataset import ERA5Dataset
 from ecoperceiver.components import EcoPerceiverConfig
 from ecoperceiver.model import EcoPerceiver
 
-config_path = Path('./config.yml')
-checkpoint_path = Path('../runs/test_run_3e-06_ws_l128_f12_e32_c32_o0.3_wcswcswcswcsssss_CC/seed_0/last.pth')
-data_path = Path('./data')
+base_dir = Path(__file__).resolve().parent
+run_path = base_dir.parent / "experiments/runs/final_v2_3e-06_ws_l128_f12_e32_c32_o0.3_wcswcswcswcsssss_CC/seed_0"
+config_path = run_path.parent / "config.yml"
+checkpoint_path = run_path / "last.pth"
+data_path = base_dir.parent / "experiments/data"
 
-with open(config_path, 'r') as file:
-    config = yaml.safe_load(file)
+with config_path.open("r", encoding="utf-8") as f:
+    config = yaml.safe_load(f)
 
 print("Configuration loaded:")
 print(f"Model targets: {config['model']['targets']}")
@@ -21,17 +23,7 @@ print(f"Latent space dim: {config['model']['latent_space_dim']}")
 print(f"Checkpoint path: {checkpoint_path}")
 print(f"Checkpoint exists: {checkpoint_path.exists()}")
 
-model_config = EcoPerceiverConfig(
-    targets=tuple(config['model']['targets']),
-    latent_space_dim=config['model']['latent_space_dim'],
-    num_frequencies=config['model']['num_frequencies'],
-    input_embedding_dim=config['model']['input_embedding_dim'],
-    context_length=config['model']['context_length'],
-    obs_dropout=config['model']['obs_dropout'],
-    weight_sharing=config['model']['weight_sharing'],
-    layers=config['model']['layers'],
-    pretrained_path=config['model']['pretrained_path']
-)
+model_config = EcoPerceiverConfig(**config["model"])
 
 model = EcoPerceiver(model_config)
 print(f"Model created with {sum(p.numel() for p in model.parameters())} parameters")
@@ -49,18 +41,13 @@ if checkpoint_path.exists():
     print(f"Model moved to {device} and set to evaluation mode")
 else:
     print(f"Checkpoint not found at {checkpoint_path}")
-    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-    model = model.to(device)
-    print(f"Model moved to {device} (no checkpoint loaded)")
 
-# Create dataset and dataloader
 dataset_config = EcoPerceiverLoaderConfig(**config['dataset'])
 dataset = ERA5Dataset(data_path, config=dataset_config)
 
-# Create dataloader
 dataloader = DataLoader(
     dataset, 
-    batch_size=64,  
+    batch_size=config["dataloader"]["batch_size"],  
     shuffle=False,  
     num_workers=8, 
     pin_memory=True, 
@@ -69,15 +56,22 @@ dataloader = DataLoader(
 
 print(f"Dataset created with {len(dataset)} samples")
 
-# Test model inference
 print("Testing model inference...")
 with torch.no_grad():
     batch = next(iter(dataloader))
     if hasattr(batch, "to"):
         batch = batch.to(device)
 
-    res = model(batch) # flux_labels, predictions, loss
+    res = model(batch)
 
     yhat = res.predictions
     print(f"Pred shape: {yhat.shape}")
-    print(f"Loss: {float(res.loss.mean().item()):.4f}")
+    if yhat.shape[0] > 0:
+        first_pred = yhat[0].detach().cpu()
+        print("First inferenced sample:")
+        for flux, value in zip(res.flux_labels, first_pred.tolist()):
+            print(f"  {flux}: {value:.6f}")
+    if res.loss is not None:
+        print(f"Loss: {float(res.loss.mean().item()):.4f}")
+    else:
+        print("Loss: N/A (no target_values in inference batch)")

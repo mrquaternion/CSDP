@@ -390,33 +390,56 @@ class CommandExecutor:
         end = self._parse_datetime(self.end)
 
         if end <= start:
-            raise ValueError("End datetime must be after start datetime.")
+            raise ValueError(
+                "End datetime must be after start datetime.\n" +
+                f"Current start time: {start}, and end time: {end}"
+            )
 
         # Check aggregation type and if it fits with self.start and self.end
         if self.aggregation_type == "DAILY":
             # Must align on whole days
             if not (start.hour == start.minute == start.second == 0):
-                raise ValueError("Start datetime must be at midnight for DAILY aggregation.")
+                raise ValueError(
+                    "Start datetime must be at midnight for DAILY aggregation.\n" +
+                    f"Current start time: {start}"
+                )
             if not (end.hour == 23 and end.minute == end.second == 0):
-                raise ValueError("Start datetime must be at 23:00 for DAILY aggregation.")
+                raise ValueError(
+                    "Start datetime must be at 23:00 for DAILY aggregation.\n" +
+                    f"Current end time: {end}"
+                )
 
             # Duration check: must be whole number of days
             delta_days = (end.date() - start.date()).days + 1
             if delta_days <= 0:
-                raise ValueError("Time range must cover at least one full day.")
+                raise ValueError(
+                    "Time range must cover at least one full day.\n" +
+                    f"Current start time: {start}, and end time: {end}"
+                )
         elif self.aggregation_type == "MONTHLY":
+
             # Start must be first day of a month at 00:00
             if not (start.day == 1 and start.hour == start.minute == start.second == 0):
-                raise ValueError("Start must be the first day of the month at 00:00:00 for MONTHLY aggregation.")
+                raise ValueError(
+                    "Start must be the first day of the month at 00:00:00 for MONTHLY aggregation.\n" +
+                    f"Current start time: {start}"
+                )
 
             # End must be last day of a month at 23:00
             last_day = calendar.monthrange(end.year, end.month)[1]
             if not (end.day == last_day and end.hour == 23 and end.minute == end.second == 0):
-                raise ValueError("End must be the last day of the month at 23:00:00 for MONTHLY aggregation.")
+                raise ValueError(
+                    "End must be the last day of the month at 23:00:00 for MONTHLY aggregation.\n" +
+                    f"Current end time: {end}"
+                )
 
             months_diff = (end.year - start.year) * 12 + (end.month - start.month) + 1
             if months_diff <= 0:
-                raise ValueError("Time range must cover at least one full month.")
+                raise ValueError(
+                    "End date must be after start date.\n"
+                    f"Current start date: {start.year}-{start.month:02d}, "
+                    f"end date: {end.year}-{end.month:02d}"
+                )
         elif self.aggregation_type in (None, "", "NONE"):
             pass
         else:

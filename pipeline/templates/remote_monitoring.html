@@ -7,9 +7,142 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Fraunces:wght@400;600&family=Space+Grotesk:wght@400;500;600&display=swap" rel="stylesheet">
+    <style>
+        .monitoring-page {
+            max-width: 1320px;
+        }
+
+        .monitoring-layout {
+            display: grid;
+            grid-template-columns: minmax(0, 884px) minmax(180px, 442px);
+            gap: 22px;
+            align-items: start;
+            justify-content: center;
+        }
+
+        .monitoring-main {
+            grid-column: 1;
+            display: grid;
+            gap: 22px;
+        }
+
+        .monitoring-side {
+            grid-column: 2;
+        }
+
+        .monitoring-side .card {
+            position: sticky;
+            top: 20px;
+            margin-bottom: 0;
+            min-height: 460px;
+        }
+
+        .monitoring-side h2 {
+            margin-top: 0;
+        }
+
+        .monitoring-side p {
+            margin: 0;
+            color: var(--muted);
+            line-height: 1.45;
+        }
+
+        .monitoring-controls {
+            margin-top: 14px;
+            display: flex;
+            flex-direction: column;
+            align-items: flex-start;
+            gap: 10px;
+        }
+
+        .monitoring-controls .btn {
+            width: 100%;
+            max-width: 220px;
+        }
+
+        .workflow-fields {
+            width: 100%;
+            max-width: 260px;
+            display: grid;
+            gap: 8px;
+        }
+
+        .workflow-field {
+            display: grid;
+            gap: 4px;
+        }
+
+        .workflow-field label {
+            font-size: 12px;
+            color: var(--muted);
+            font-weight: 600;
+        }
+
+        .workflow-field .input {
+            min-height: 38px;
+            padding: 8px 10px;
+            font-size: 13px;
+        }
+
+        .monitoring-status-row {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .monitoring-status-label {
+            font-size: 13px;
+            color: var(--muted);
+            margin: 0;
+        }
+
+        .monitoring-status {
+            margin: 0;
+            font-size: 13px;
+            color: #2b3b38;
+            padding: 5px 10px;
+            border-radius: 999px;
+            border: 1px solid #e4d9cc;
+            background: #fbf8f3;
+        }
+
+        .monitoring-main .card {
+            margin-bottom: 0;
+        }
+
+        @media (max-width: 1180px) {
+            .monitoring-layout {
+                grid-template-columns: minmax(0, 1fr) 220px;
+            }
+
+            .monitoring-main {
+                grid-column: 1;
+            }
+
+            .monitoring-side {
+                grid-column: 2;
+            }
+        }
+
+        @media (max-width: 900px) {
+            .monitoring-layout {
+                grid-template-columns: 1fr;
+            }
+
+            .monitoring-main,
+            .monitoring-side {
+                grid-column: 1;
+            }
+
+            .monitoring-side .card {
+                position: static;
+                min-height: 0;
+            }
+        }
+    </style>
 </head>
 <body>
-    <div class="page">
+    <div class="page monitoring-page">
         <header class="header">
             <div>
                 <p class="eyebrow">Carbon Pipeline</p>
@@ -18,46 +151,60 @@
             <div class="badge">v2</div>
         </header>
 
-        <section class="card">
-            <h2>Transfer Output</h2>
-            <pre class="log-box" id="transfer-output">No output yet.</pre>
-        </section>
+        <div class="monitoring-layout">
+            <main class="monitoring-main">
+                <section class="card">
+                    <h2>Local Output</h2>
+                    <p>Water Table Depth (WTD) data can take a while to download, each file is ~800MB. Check <b>Remote Output</b> to see that data is being transferred.</p>
+                    <pre class="log-box" id="download-output">No output yet.</pre>
+                </section>
 
-        <section class="card">
-            <h2>Transfer Errors</h2>
-            <pre class="log-box error-log" id="transfer-error">No errors.</pre>
-        </section>
+                <section class="card">
+                    <h2>Remote Output</h2>
+                    <pre class="log-box" id="sync-output">No output yet.</pre>
+                </section>
+
+                <section class="card">
+                    <h2>Transfer Errors</h2>
+                    <pre class="log-box error-log" id="transfer-error">No errors.</pre>
+                </section>
+            </main>
+
+            <aside class="monitoring-side">
+                <section class="card">
+                    <h2>Workflow</h2>
+                    <div class="monitoring-controls">
+                        <button class="btn" id="start-download-btn" type="button">Start Download</button>
+                        <div class="workflow-fields">
+                            <div class="workflow-field">
+                                <label for="post-memory">Memory</label>
+                                <input class="input" id="post-memory" type="text" value="16G" placeholder="e.g. 16G">
+                            </div>
+                            <div class="workflow-field">
+                                <label for="post-cpus">CPUs per task</label>
+                                <input class="input" id="post-cpus" type="text" value="4" placeholder="e.g. 4">
+                            </div>
+                            <div class="workflow-field">
+                                <label for="post-time">Time</label>
+                                <input class="input" id="post-time" type="text" value="04:00:00" placeholder="HH:MM:SS">
+                            </div>
+                            <div class="workflow-field">
+                                <label for="post-slurm-account">Slurm account</label>
+                                <input class="input" id="post-slurm-account" type="text" value="{{ slurm_account_default }}" placeholder="e.g. def-sonol">
+                            </div>
+                        </div>
+                        <button class="btn" id="start-postprocessing-btn" type="button">Start Post-processing</button>
+                        <div class="monitoring-status-row">
+                            <p class="monitoring-status-label">Status:</p>
+                            <p class="monitoring-status" id="transfer-status">Idle</p>
+                        </div>
+                        <p>Note: Start the post-processing ONLY when no data is being transferred (meaning it's finished).</p>
+                    </div>
+                </section>
+            </aside>
+        </div>
     </div>
 
-    <script>
-        const outputEl = document.getElementById('transfer-output');
-        const errorEl = document.getElementById('transfer-error');
-
-        async function startTransfer() {
-            const response = await fetch('/remote-monitoring/start', { method: 'POST' });
-            const data = await response.json();
-
-            if (!response.ok || !data.ok) {
-                errorEl.textContent = data.error || 'Unknown error.';
-                return;
-            }
-
-            pollTransfer();
-        }
-
-        async function pollTransfer() {
-            const response = await fetch('/remote-monitoring/status');
-            const data = await response.json();
-
-            outputEl.textContent = data.output || 'No output yet.';
-            errorEl.textContent = data.error || 'No errors.';
-
-            if (data.running) {
-                setTimeout(pollTransfer, 1000);
-            }
-        }
-
-        startTransfer();
-    </script>
+    <script src="{{ url_for('static', filename='sse.js') }}"></script>
 </body>
 </html>

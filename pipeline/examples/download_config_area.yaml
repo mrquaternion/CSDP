@@ -1,5 +1,5 @@
 action: download
 bbox-coordinates: [90, -180, -90, 180]
-start-date: "2015-12-01 00:00:00"     
-end-date: "2015-12-31 23:00:00"       
+start-date: "2015-12-31 12:31:00"     
+end-date: "2015-12-30 12:31:00"       
 manifest: "manifests/example_run.json"
