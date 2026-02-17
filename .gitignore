@@ -1,18 +1,22 @@
 Containers
 .DS_Store
-pipeline/carbonpipeline/Processing/__pycache__/
-pipeline/carbonpipeline/Geometry/__pycache__/
-pipeline/carbonpipeline.egg-info
-pipeline/carbonpipeline/__pycache__/
-pipeline/datasets/
-pipeline/manifests
-pipeline/outputs/
-pipeline/outputs_tmp/
-pipeline/config/postprocess_job.generated.sh
-pipeline/config/config.yml
-pipeline/config/process_config.yml
+CarbonCast/carbonpipeline/Processing/__pycache__/
+CarbonCast/carbonpipeline/Geometry/__pycache__/
+CarbonCast/carbonpipeline.egg-info
+CarbonCast/carbonpipeline/__pycache__/
+CarbonCast/datasets/
+CarbonCast/manifests
+CarbonCast/outputs/
+CarbonCast/outputs_tmp/
+CarbonCast/config/postprocess_job.generated.sh
+CarbonCast/config/config.yml
+CarbonCast/config/process_config.yml
+CarbonCast/research/
 EcoPerceiver/experiments/
 EcoPerceiver/runs/
+CarbonSense/data/
+CarbonSense/run_pipeline.ipynb
+CarbonSense/download_modis.ipynb
 visualization/
 
 # Python bytecode
