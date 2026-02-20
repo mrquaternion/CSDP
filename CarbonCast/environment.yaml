@@ -1,4 +1,4 @@
-name: csdpenv
+name: ccenv
 channels:
   - conda-forge
 dependencies:

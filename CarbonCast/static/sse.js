@@ -4,11 +4,16 @@ document.addEventListener("DOMContentLoaded", () => {
     const errorEl = document.getElementById('transfer-error');
     const startDownloadBtn = document.getElementById('start-download-btn');
     const startPostBtn = document.getElementById('start-postprocessing-btn');
+    const startGasFluxBtn = document.getElementById('start-gasflux-btn');
     const statusEl = document.getElementById('transfer-status');
+    const viewOutputsBtn = document.getElementById('view-outputs-btn');
     const memoryInput = document.getElementById('post-memory');
     const cpusInput = document.getElementById('post-cpus');
     const timeInput = document.getElementById('post-time');
     const slurmAccountInput = document.getElementById('post-slurm-account');
+    const gasFluxMemoryInput = document.getElementById('gasflux-memory');
+    const gasFluxCpusInput = document.getElementById('gasflux-cpus');
+    const gasFluxTimeInput = document.getElementById('gasflux-time');
     let downloadBuffer = '';
     let syncBuffer = '';
     let errorBuffer = '';
@@ -31,6 +36,7 @@ document.addEventListener("DOMContentLoaded", () => {
             idle: 'Idle',
             downloading: 'Downloading',
             postprocessing: 'Postprocessing',
+            gasflux: 'Gas Flux',
             done: 'Done',
             failed: 'Failed',
         };
@@ -64,6 +70,12 @@ document.addEventListener("DOMContentLoaded", () => {
         }
         if (startPostBtn) {
             startPostBtn.disabled = !Boolean(state.can_start_postprocessing);
+        }
+        if (startGasFluxBtn) {
+            startGasFluxBtn.disabled = !Boolean(state.can_start_gas_flux);
+        }
+        if (viewOutputsBtn) {
+            viewOutputsBtn.style.display = state.can_view_outputs ? 'inline-flex' : 'none';
         }
     }
 
@@ -100,6 +112,13 @@ document.addEventListener("DOMContentLoaded", () => {
             time: timeInput ? timeInput.value.trim() : '',
             slurm_account: slurmAccountInput ? slurmAccountInput.value.trim() : '',
         };
+        if (gasFluxMemoryInput || gasFluxCpusInput || gasFluxTimeInput) {
+            payload.gas_flux_job_config = {
+                memory: gasFluxMemoryInput ? gasFluxMemoryInput.value.trim() : '',
+                cpus: gasFluxCpusInput ? gasFluxCpusInput.value.trim() : '',
+                time: gasFluxTimeInput ? gasFluxTimeInput.value.trim() : '',
+            };
+        }
 
         const response = await fetch('/remote-monitoring/start-postprocessing', {
             method: 'POST',
@@ -114,6 +133,41 @@ document.addEventListener("DOMContentLoaded", () => {
             }
             if (startPostBtn) {
                 startPostBtn.disabled = false;
+            }
+            return;
+        }
+
+        applyState(data);
+        startStream();
+    }
+
+    async function startGasFlux() {
+        if (startGasFluxBtn) {
+            startGasFluxBtn.disabled = true;
+        }
+
+        const payload = {
+            slurm_account: slurmAccountInput ? slurmAccountInput.value.trim() : '',
+            gas_flux_job_config: {
+                memory: gasFluxMemoryInput ? gasFluxMemoryInput.value.trim() : '',
+                cpus: gasFluxCpusInput ? gasFluxCpusInput.value.trim() : '',
+                time: gasFluxTimeInput ? gasFluxTimeInput.value.trim() : '',
+            },
+        };
+
+        const response = await fetch('/remote-monitoring/start-gas-flux', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload),
+        });
+        const data = await response.json();
+        if (!response.ok || !data.ok) {
+            errorEl.textContent = data.error || 'Unknown error.';
+            if (statusEl) {
+                statusEl.textContent = 'Failed';
+            }
+            if (startGasFluxBtn) {
+                startGasFluxBtn.disabled = false;
             }
             return;
         }
@@ -164,6 +218,14 @@ document.addEventListener("DOMContentLoaded", () => {
                 errorEl.textContent = errorBuffer || 'No errors.';
                 return;
             }
+
+            if (data.type === 'artifacts_ready') {
+                if (viewOutputsBtn && data.url) {
+                    viewOutputsBtn.href = data.url;
+                    viewOutputsBtn.style.display = 'inline-flex';
+                }
+                return;
+            }
         };
 
         stream.onerror = () => {
@@ -177,6 +239,9 @@ document.addEventListener("DOMContentLoaded", () => {
             if (startPostBtn) {
                 startPostBtn.disabled = false;
             }
+            if (startGasFluxBtn) {
+                startGasFluxBtn.disabled = false;
+            }
         };
     }
 
@@ -185,6 +250,9 @@ document.addEventListener("DOMContentLoaded", () => {
     }
     if (startPostBtn) {
         startPostBtn.addEventListener('click', startPostprocessing);
+    }
+    if (startGasFluxBtn) {
+        startGasFluxBtn.addEventListener('click', startGasFlux);
     }
     startStream();
     scrollToBottom(downloadEl);

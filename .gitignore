@@ -1,22 +1,20 @@
 Containers
 .DS_Store
-CarbonCast/carbonpipeline/Processing/__pycache__/
-CarbonCast/carbonpipeline/Geometry/__pycache__/
-CarbonCast/carbonpipeline.egg-info
-CarbonCast/carbonpipeline/__pycache__/
-CarbonCast/datasets/
-CarbonCast/manifests
-CarbonCast/outputs/
-CarbonCast/outputs_tmp/
-CarbonCast/config/postprocess_job.generated.sh
-CarbonCast/config/config.yml
-CarbonCast/config/process_config.yml
-CarbonCast/research/
-EcoPerceiver/experiments/
-EcoPerceiver/runs/
-CarbonSense/data/
-CarbonSense/run_pipeline.ipynb
-CarbonSense/download_modis.ipynb
+carboncast/era5dp.egg-info
+carboncast/Processing/__pycache__/
+carboncast/Geometry/__pycache__/
+carboncast.egg-info
+carboncast/__pycache__/
+carboncast/datasets/
+carboncast/manifests
+carboncast/outputs/
+carboncast/outputs_tmp/
+carboncast/config/postprocess_job.generated.sh
+carboncast/config/gas_flux_pred.generated.sh
+carboncast/config/config.yml
+carboncast/config/process_config.yml
+carboncast/research/
+carboncast/config/gas_flux_assets/
 visualization/
 
 # Python bytecode
@@ -26,3 +24,5 @@ __pycache__/
 
 # Jupyter
 .ipynb_checkpoints/
+
+.vscode/

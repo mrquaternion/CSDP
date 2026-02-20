@@ -72,6 +72,22 @@
             gap: 4px;
         }
 
+        .workflow-subsection {
+            width: 100%;
+            max-width: 260px;
+            display: grid;
+            gap: 8px;
+            padding-top: 10px;
+            border-top: 1px solid #e9dfd2;
+        }
+
+        .workflow-subtitle {
+            margin: 0;
+            font-size: 13px;
+            font-weight: 600;
+            color: #2b3b38;
+        }
+
         .workflow-field label {
             font-size: 12px;
             color: var(--muted);
@@ -194,6 +210,27 @@
                             </div>
                         </div>
                         <button class="btn" id="start-postprocessing-btn" type="button">Start Post-processing</button>
+                        <a class="btn" id="view-outputs-btn" href="{{ url_for('monitoring.outputs_ready') }}" style="display: none;">View Synced Outputs</a>
+
+                        {% if query_type == "gas_flux_predictions" %}
+                        <div class="workflow-subsection">
+                            <p class="workflow-subtitle">Gas Flux Job Config</p>
+                            <div class="workflow-field">
+                                <label for="gasflux-memory">Memory</label>
+                                <input class="input" id="gasflux-memory" type="text" value="24G" placeholder="e.g. 24G">
+                            </div>
+                            <div class="workflow-field">
+                                <label for="gasflux-cpus">CPUs per task</label>
+                                <input class="input" id="gasflux-cpus" type="text" value="8" placeholder="e.g. 8">
+                            </div>
+                            <div class="workflow-field">
+                                <label for="gasflux-time">Time</label>
+                                <input class="input" id="gasflux-time" type="text" value="08:00:00" placeholder="HH:MM:SS">
+                            </div>
+                        </div>
+                        <button class="btn" id="start-gasflux-btn" type="button">Start Gas Flux</button>
+                        {% endif %}
+
                         <div class="monitoring-status-row">
                             <p class="monitoring-status-label">Status:</p>
                             <p class="monitoring-status" id="transfer-status">Idle</p>

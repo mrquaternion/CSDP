@@ -1,6 +1,6 @@
 [project]
-name = "carbonpipeline"
-version = "1.0.2"
+name = "era5dp"
+version = "1.1"
 description = "A pipeline to transform data into AmeriFlux predictors."
 readme = "README.md"
 dependencies = [
@@ -21,7 +21,7 @@ dependencies = [
 ]
 
 [project.scripts]
-carbonpipeline = "carbonpipeline.main:run"
+era5dp = "era5dp.main:run"
 
 [tool.setuptools]
-packages = ["carbonpipeline"]
+packages = ["era5dp"]
