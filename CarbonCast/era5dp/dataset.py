@@ -408,3 +408,32 @@ class DatasetManager:
                 pass
 
         return path
+
+    def save_netcdf_daily(
+        self,
+        dataset: xr.Dataset,
+        output_name: str,
+    ) -> list[Path]:
+        """Persist one NetCDF file per day when valid_time is available."""
+        if "valid_time" not in dataset.coords:
+            return [self.save_netcdf(dataset=dataset, output_name=output_name)]
+
+        valid_time = pd.to_datetime(dataset["valid_time"].values, errors="coerce")
+        if len(valid_time) == 0:
+            return [self.save_netcdf(dataset=dataset, output_name=output_name)]
+
+        day_tokens = pd.Series(valid_time).dt.strftime("%Y-%m-%d")
+        unique_days = [day for day in day_tokens.dropna().unique()]
+        if not unique_days:
+            return [self.save_netcdf(dataset=dataset, output_name=output_name)]
+
+        saved_paths: list[Path] = []
+        for day in unique_days:
+            indexes = np.where(day_tokens == day)[0]
+            if len(indexes) == 0:
+                continue
+            day_dataset = dataset.isel(valid_time=indexes)
+            day_name = f"{output_name}_{day}"
+            saved_paths.append(self.save_netcdf(dataset=day_dataset, output_name=day_name))
+
+        return saved_paths

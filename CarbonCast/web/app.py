@@ -35,7 +35,7 @@ def _to_session_safe(data):
 
 
 def create_app():
-    project_root = Path(__file__).resolve().parents[1]
+    project_root = Path(__file__).resolve().parent
     app = Flask(
         __name__,
         template_folder=str(project_root / "templates"),
