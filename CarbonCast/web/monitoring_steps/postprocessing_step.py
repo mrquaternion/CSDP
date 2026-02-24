@@ -40,6 +40,12 @@ ECO_REPO_PARENT_DIR = "scratch/CarbonCast"
 ECO_REPO_DIR = f"{ECO_REPO_PARENT_DIR}/{ECO_REPO_DIRNAME}"
 PIPELINE_REMOTE_DIR = "scratch/CarbonCast/carboncast"
 ZENODO_RECORD_URL = "https://zenodo.org/records/18704871"
+LAND_SEA_MASK: list[tuple[str, str]] = [
+    (
+        "https://confluence.ecmwf.int/download/attachments/140385202/lsm_1279l4_0.1x0.1.grb_v4_unpack.nc?version=1&modificationDate=1591983422208&api=v2",
+        "lsm.nc",
+    ),
+]
 
 def _validate_job_resources(memory: str, cpus_raw: str, wall_time: str) -> tuple[str, int, str]:
     memory = str(memory).strip().upper()
@@ -351,11 +357,12 @@ def prepare_remote_gas_flux_assets(
         emit_output=emit_output,
     )
 
-    local_resnet_dir, local_runs_dir = download_gas_flux_assets_locally(emit_output=emit_output)
+    local_resnet_dir, local_runs_dir, local_era5_data_dir = download_gas_flux_assets_locally(emit_output=emit_output)
     sync_gas_flux_assets_to_cluster(
         account=account,
         local_resnet_dir=local_resnet_dir,
         local_runs_dir=local_runs_dir,
+        local_era5_data_dir=local_era5_data_dir,
         emit_output=emit_output,
     )
     sync_processed_outputs_to_cluster(
@@ -449,18 +456,20 @@ def ensure_ecoperceiver_repo(
 
 def download_gas_flux_assets_locally(
     emit_output: Callable[[str, str], None],
-) -> tuple[Path, Path]:
+) -> tuple[Path, Path, Path]:
     emit_output("Downloading gas-flux assets locally from Zenodo...\n", "sync")
     base_dir = LOCAL_CONFIG_DIR / "gas_flux_assets"
     raw_dir = base_dir / "raw"
     resnet_dir = base_dir / "resnet"
     runs_dir = base_dir / "runs"
+    era5_data_dir = base_dir / "era5_data"
 
     if base_dir.exists():
         shutil.rmtree(base_dir)
     raw_dir.mkdir(parents=True, exist_ok=True)
     resnet_dir.mkdir(parents=True, exist_ok=True)
     runs_dir.mkdir(parents=True, exist_ok=True)
+    era5_data_dir.mkdir(parents=True, exist_ok=True)
 
     parsed = urllib.parse.urlparse(ZENODO_RECORD_URL)
     parts = [p for p in parsed.path.split("/") if p]
@@ -498,13 +507,21 @@ def download_gas_flux_assets_locally(
 
         shutil.copy2(path, runs_dir / path.name)
 
-    return resnet_dir, runs_dir
+    emit_output("Downloading land-sea mask assets locally...\n", "sync")
+    for url, target_name in LAND_SEA_MASK:
+        destination = era5_data_dir / target_name
+        emit_output(f"Downloading {target_name}\n", "sync")
+        with urllib.request.urlopen(url) as src, destination.open("wb") as dst:
+            shutil.copyfileobj(src, dst)
+
+    return resnet_dir, runs_dir, era5_data_dir
 
 
 def sync_gas_flux_assets_to_cluster(
     account: str,
     local_resnet_dir: Path,
     local_runs_dir: Path,
+    local_era5_data_dir: Path,
     emit_output: Callable[[str, str], None],
 ):
     rsync = shutil.which("rsync")
@@ -513,6 +530,7 @@ def sync_gas_flux_assets_to_cluster(
 
     remote_resnet_dir = f"{ECO_REPO_DIR}/ecoperceiver"
     remote_runs_dir = f"{ECO_REPO_DIR}/experiments/runs"
+    remote_era5_data_dir = f"{ECO_REPO_DIR}/experiments/data"
     run(
         [
             "ssh",
@@ -522,6 +540,7 @@ def sync_gas_flux_assets_to_cluster(
             "-p",
             f"~/{remote_resnet_dir}",
             f"~/{remote_runs_dir}",
+            f"~/{remote_era5_data_dir}",
         ],
         on_output=lambda text, stream="sync": emit_output(text, stream),
         output_stream="sync",
@@ -547,6 +566,18 @@ def sync_gas_flux_assets_to_cluster(
             get_rsync_ssh_command(),
             f"{str(local_runs_dir)}/",
             f"{account}:~/{remote_runs_dir}/",
+        ],
+        on_output=lambda text, stream="sync": emit_output(text, stream),
+        output_stream="sync",
+    )
+    run(
+        [
+            rsync,
+            "-avh",
+            "-e",
+            get_rsync_ssh_command(),
+            f"{str(local_era5_data_dir)}/",
+            f"{account}:~/{remote_era5_data_dir}/",
         ],
         on_output=lambda text, stream="sync": emit_output(text, stream),
         output_stream="sync",

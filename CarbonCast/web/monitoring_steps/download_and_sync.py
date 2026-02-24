@@ -75,9 +75,10 @@ def emit_output(on_output, text: str, stream_type: str):
 def download_and_sync(credential: str, data: Any | None, on_output=None):
     config_path = LOCAL_CONFIG_DIR / CONFIG_FILENAME
     config_path.parent.mkdir(parents=True, exist_ok=True)
+    config_payload = format_yml_data(data)
 
     with open(config_path, "w") as outfile:
-        yaml.dump(format_yml_data(data), outfile, default_flow_style=False)
+        yaml.dump(config_payload, outfile, default_flow_style=False)
 
     use_ssh_multiplex = shutil.which('rsync') is not None or shutil.which('scp') is not None
     if use_ssh_multiplex:
@@ -96,6 +97,17 @@ def download_and_sync(credential: str, data: Any | None, on_output=None):
             ),
             "sync",
         )
+
+    skip_wtd = False
+    wtd_time_window = _compute_wtd_time_window(config_payload)
+    if wtd_time_window and _remote_wtd_exists(credential=credential, time_window=wtd_time_window, on_output=on_output):
+        skip_wtd = True
+        emit_output(
+            on_output,
+            f"WTD data already exists on cluster for {wtd_time_window}; skipping WTD transfer.\n",
+            "sync",
+        )
+        _mark_wtd_present_in_registry(wtd_time_window)
 
     download_env = os.environ.copy()
     download_env["ERA5DP_DOWNLOAD_CHECK_MODE"] = "hybrid"
@@ -122,6 +134,8 @@ def download_and_sync(credential: str, data: Any | None, on_output=None):
                     credential=credential,
                     on_output=on_output,
                     use_ssh_multiplex=use_ssh_multiplex,
+                    finalize_wtd_cleanup=False,
+                    skip_wtd_sync=skip_wtd,
                 )
             except Exception as exc:
                 sync_failure['error'] = exc
@@ -161,6 +175,8 @@ def download_and_sync(credential: str, data: Any | None, on_output=None):
             credential=credential,
             on_output=on_output,
             use_ssh_multiplex=use_ssh_multiplex,
+            finalize_wtd_cleanup=True,
+            skip_wtd_sync=skip_wtd,
         )
     finally:
         stop_sync_event.set()
@@ -169,12 +185,29 @@ def download_and_sync(credential: str, data: Any | None, on_output=None):
             stop_ssh_master(credential=credential, on_output=on_output)
 
 
-def sync(credential: str, on_output=None, use_ssh_multiplex: bool = False):
+def sync(
+    credential: str,
+    on_output=None,
+    use_ssh_multiplex: bool = False,
+    finalize_wtd_cleanup: bool = False,
+    skip_wtd_sync: bool = False,
+):
     LOCAL_UNZIP_DIR.mkdir(parents=True, exist_ok=True)
 
-    cmd = get_sync_cmd(credential, use_ssh_multiplex=use_ssh_multiplex)
-    output = run(cmd, on_output=on_output, output_stream='sync')
-    if cmd and cmd[0] == 'rsync':
+    commands = get_sync_cmds(
+        credential,
+        use_ssh_multiplex=use_ssh_multiplex,
+        finalize_wtd_cleanup=finalize_wtd_cleanup,
+        skip_wtd_sync=skip_wtd_sync,
+    )
+
+    output = ""
+    used_rsync = False
+    for cmd in commands:
+        output = run(cmd, on_output=on_output, output_stream='sync')
+        used_rsync = used_rsync or (cmd and cmd[0] == "rsync")
+
+    if used_rsync:
         _remove_empty_dirs(LOCAL_UNZIP_DIR)
 
     emit_output(on_output, 'Transfer done!\n', 'sync')
@@ -190,21 +223,58 @@ def _remove_empty_dirs(root: Path):
             continue
 
 
-def get_sync_cmd(credential: str, use_ssh_multiplex: bool = False):
+def _build_rsync_cmd(
+    credential: str,
+    use_ssh_multiplex: bool,
+    remove_source_files: bool,
+    filter_args: list[str] | None = None,
+) -> list[str]:
+    cmd = ["rsync", "-avh", "--info=progress2", "--prune-empty-dirs"]
+    if remove_source_files:
+        cmd.append("--remove-source-files")
+    if filter_args:
+        cmd.extend(filter_args)
+    cmd.extend([
+        f"{str(LOCAL_UNZIP_DIR)}/",
+        f"{credential}:~/{REMOTE_DIR}/",
+    ])
+
+    if use_ssh_multiplex:
+        cmd[1:1] = ["-e", get_rsync_ssh_command()]
+    return cmd
+
+
+def get_sync_cmds(
+    credential: str,
+    use_ssh_multiplex: bool = False,
+    finalize_wtd_cleanup: bool = False,
+    skip_wtd_sync: bool = False,
+):
     # tools detection
     rsync = shutil.which('rsync')
     scp = shutil.which('scp')
 
     if rsync:
-        cmd = [
-            'rsync', '-avh', '--info=progress2', '--remove-source-files', '--prune-empty-dirs',
-            f"{str(LOCAL_UNZIP_DIR)}/",
-            f"{credential}:~/{REMOTE_DIR}/"
+        commands = [
+            # ERA5/CO2 (and anything outside WTD): move continuously.
+            _build_rsync_cmd(
+                credential=credential,
+                use_ssh_multiplex=use_ssh_multiplex,
+                remove_source_files=True,
+                filter_args=["--exclude=WTD/***"],
+            ),
         ]
-        if use_ssh_multiplex:
-            cmd[1:1] = ['-e', get_rsync_ssh_command()]
-
-        return cmd
+        if not skip_wtd_sync:
+            # WTD: copy-only during ongoing scrape downloads.
+            commands.append(
+                _build_rsync_cmd(
+                    credential=credential,
+                    use_ssh_multiplex=use_ssh_multiplex,
+                    remove_source_files=finalize_wtd_cleanup,
+                    filter_args=["--include=WTD/***", "--exclude=*"],
+                )
+            )
+        return commands
     
     else:
         if not scp:
@@ -224,7 +294,7 @@ def get_sync_cmd(credential: str, use_ssh_multiplex: bool = False):
         ]
         if use_ssh_multiplex:
             cmd[1:1] = ['-e', get_rsync_ssh_command()]
-        return cmd
+        return [cmd]
 
 
 def get_ssh_common_options():
@@ -306,6 +376,65 @@ def bootstrap_cluster_download_registry(credential: str, on_output=None):
         ),
         "sync",
     )
+
+
+def _has_wtd_predictor(config_payload: dict[str, Any]) -> bool:
+    predictors = config_payload.get("ameriflux-predictors")
+    if isinstance(predictors, str):
+        predictor_values = [p.strip() for p in predictors.split(",") if p.strip()]
+    elif isinstance(predictors, list):
+        predictor_values = [str(p).strip() for p in predictors if str(p).strip()]
+    else:
+        predictor_values = []
+    return any(p.upper() == "WTD" for p in predictor_values)
+
+
+def _compute_wtd_time_window(config_payload: dict[str, Any]) -> str | None:
+    if not _has_wtd_predictor(config_payload):
+        return None
+
+    start = str(config_payload.get("start-date") or "").strip()
+    end = str(config_payload.get("end-date") or "").strip()
+    if not start or not end:
+        return None
+
+    try:
+        start_dt = datetime.datetime.fromisoformat(start)
+        end_dt = datetime.datetime.fromisoformat(end)
+    except ValueError:
+        return None
+
+    return f"{start_dt:%Y-%m}_{end_dt:%Y-%m}"
+
+
+def _remote_wtd_exists(credential: str, time_window: str, on_output=None) -> bool:
+    cmd = (
+        f"if [ -d ~/{REMOTE_DIR}/WTD/{time_window} ] && "
+        f"find ~/{REMOTE_DIR}/WTD/{time_window} -type f -name '*.tif' -print -quit | grep -q .; "
+        "then echo 1; else echo 0; fi"
+    )
+    output = run(
+        ["ssh", *get_ssh_common_options(), credential, cmd],
+        on_output=on_output,
+        output_stream="sync",
+    )
+    return output.strip().endswith("1")
+
+
+def _mark_wtd_present_in_registry(time_window: str):
+    entry_path = (LOCAL_UNZIP_DIR / "WTD" / time_window).resolve()
+    payload: dict[str, Any] = {"entries": {}}
+    if DOWNLOAD_REGISTRY_PATH.exists():
+        try:
+            payload = json.loads(DOWNLOAD_REGISTRY_PATH.read_text(encoding="utf-8"))
+        except (json.JSONDecodeError, OSError):
+            payload = {"entries": {}}
+
+    entries = payload.setdefault("entries", {})
+    entries[str(entry_path)] = {"any": True, "nc": False, "tif": True}
+    payload["generated_at"] = datetime.datetime.now(datetime.timezone.utc).isoformat()
+    DOWNLOAD_REGISTRY_PATH.parent.mkdir(parents=True, exist_ok=True)
+    DOWNLOAD_REGISTRY_PATH.write_text(json.dumps(payload, indent=2), encoding="utf-8")
 
 
 def start_ssh_master(credential: str, on_output=None):

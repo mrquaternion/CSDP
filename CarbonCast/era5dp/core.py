@@ -232,8 +232,9 @@ class CarbonPipeline:
         else: # NO AGGREGATION
             for idx, ds in region_datasets_by_id.items():
                 name = "_".join([output_name, idx])
-                save_path = self.dataset_manager.save_netcdf(ds, name)
-                print(f"✅ File saved to {save_path}")
+                save_paths = self.dataset_manager.save_netcdf_daily(ds, name)
+                for save_path in save_paths:
+                    print(f"✅ File saved to {save_path}")
 
     def run_point_process(
         self,
@@ -279,8 +280,9 @@ class CarbonPipeline:
             era5_ds = era5_ds.drop_vars(["year_month", "lat", "lon"])
 
             output_name = f"{output_name}_{region_id}"
-            save_path = self.dataset_manager.save_netcdf(era5_ds, output_name)
-            print(f"✅ File saved to {save_path}")
+            save_paths = self.dataset_manager.save_netcdf_daily(era5_ds, output_name)
+            for save_path in save_paths:
+                print(f"✅ File saved to {save_path}")
 
     def load_features_from_manifest(self, path):
         """Load manifest file as a dict."""
