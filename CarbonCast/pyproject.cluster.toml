@@ -1,0 +1,22 @@
+[project]
+name = "era5dp"
+version = "1.1"
+description = "A pipeline to transform data into AmeriFlux predictors."
+readme = "README.md"
+dependencies = [
+    "cdsapi",
+    "xarray",
+    "numpy",
+    "pandas",
+    "netCDF4",
+    "numexpr",
+    "pyyaml",
+    "rioxarray",
+    "dask"
+]
+
+[project.scripts]
+era5dp = "era5dp.main:run"
+
+[tool.setuptools]
+packages = ["era5dp"]

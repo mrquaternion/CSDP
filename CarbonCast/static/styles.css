@@ -136,6 +136,11 @@ label {
   opacity: 1;
 }
 
+.field-error-compact {
+  margin: -8px 0 0;
+  min-height: 0;
+}
+
 .input:focus {
   border-color: var(--accent);
   box-shadow: 0 0 0 4px var(--ring);
@@ -167,6 +172,12 @@ label {
 }
 
 .checkbox-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: 10px 14px;
+}
+
+.checkbox-grid-no-toggle {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
   gap: 10px 14px;
@@ -242,10 +253,15 @@ label {
 }
 
 .btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   border: none;
   background: linear-gradient(120deg, var(--accent), var(--accent-2));
   color: #fff;
   font-weight: 600;
+  text-decoration: none;
+  line-height: 1.2;
   padding: 10px 18px;
   border-radius: 12px;
   cursor: pointer;

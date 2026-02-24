@@ -14,7 +14,7 @@ from .Geometry.geometry_processor import GeometryProcessor
 from .Geometry.geometry import Geometry, GeometryType
 from .Processing.constants import *
 from .core import CarbonPipeline
-from .downloader import DataDownloaderError
+from .download_registry import DownloadRegistry
 
 
 class CommandExecutorError(Exception):
@@ -32,6 +32,7 @@ class SpecialPredictors:
     def __init__(self, predictors: list[str]):
         self.requires_wtd_data = "WTD" in predictors
         self.requires_co2_data = "CO2" in predictors
+        self.download_registry = DownloadRegistry()
 
     async def download_required_data(self, pipeline, start, end):
         """Kick off CO2/WTD downloads if required and missing on disk."""
@@ -39,7 +40,7 @@ class SpecialPredictors:
 
         if self.requires_co2_data:
             co2_root = Path(pipeline.config.CO2_DIR)
-            co2_present = co2_root.is_dir() and any(co2_root.rglob("*.nc"))
+            co2_present = self.download_registry.has_data(co2_root, kind="nc")
             if not co2_present:
                 print("⬇️ Downloading CO2 data...")
                 tasks.append(asyncio.create_task(pipeline.downloader.download_co2_data(co2_root)))
@@ -52,7 +53,7 @@ class SpecialPredictors:
             time_window = "_".join([start_str, end_str])
 
             wtd_path = Path(os.path.join(pipeline.config.WTD_DIR, time_window))
-            wtd_present = wtd_path.is_dir() and any(wtd_path.rglob("*.tif"))
+            wtd_present = self.download_registry.has_data(wtd_path, kind="tif")
             if not wtd_present:
                 print("⬇️ Download WTD data...")
                 tasks.append(asyncio.create_task(pipeline.downloader.download_wtd_data(start, end, wtd_path)))
@@ -163,6 +164,7 @@ class CommandExecutor:
             self.end,
         )
 
+        from .downloader import DataDownloaderError
         if global_tasks:
             results = await asyncio.gather(*global_tasks, return_exceptions=True)
             for res in results:
@@ -390,33 +392,56 @@ class CommandExecutor:
         end = self._parse_datetime(self.end)
 
         if end <= start:
-            raise ValueError("End datetime must be after start datetime.")
+            raise ValueError(
+                "End datetime must be after start datetime.\n" +
+                f"Current start time: {start}, and end time: {end}"
+            )
 
         # Check aggregation type and if it fits with self.start and self.end
         if self.aggregation_type == "DAILY":
             # Must align on whole days
             if not (start.hour == start.minute == start.second == 0):
-                raise ValueError("Start datetime must be at midnight for DAILY aggregation.")
+                raise ValueError(
+                    "Start datetime must be at midnight for DAILY aggregation.\n" +
+                    f"Current start time: {start}"
+                )
             if not (end.hour == 23 and end.minute == end.second == 0):
-                raise ValueError("Start datetime must be at 23:00 for DAILY aggregation.")
+                raise ValueError(
+                    "Start datetime must be at 23:00 for DAILY aggregation.\n" +
+                    f"Current end time: {end}"
+                )
 
             # Duration check: must be whole number of days
             delta_days = (end.date() - start.date()).days + 1
             if delta_days <= 0:
-                raise ValueError("Time range must cover at least one full day.")
+                raise ValueError(
+                    "Time range must cover at least one full day.\n" +
+                    f"Current start time: {start}, and end time: {end}"
+                )
         elif self.aggregation_type == "MONTHLY":
+
             # Start must be first day of a month at 00:00
             if not (start.day == 1 and start.hour == start.minute == start.second == 0):
-                raise ValueError("Start must be the first day of the month at 00:00:00 for MONTHLY aggregation.")
+                raise ValueError(
+                    "Start must be the first day of the month at 00:00:00 for MONTHLY aggregation.\n" +
+                    f"Current start time: {start}"
+                )
 
             # End must be last day of a month at 23:00
             last_day = calendar.monthrange(end.year, end.month)[1]
             if not (end.day == last_day and end.hour == 23 and end.minute == end.second == 0):
-                raise ValueError("End must be the last day of the month at 23:00:00 for MONTHLY aggregation.")
+                raise ValueError(
+                    "End must be the last day of the month at 23:00:00 for MONTHLY aggregation.\n" +
+                    f"Current end time: {end}"
+                )
 
             months_diff = (end.year - start.year) * 12 + (end.month - start.month) + 1
             if months_diff <= 0:
-                raise ValueError("Time range must cover at least one full month.")
+                raise ValueError(
+                    "End date must be after start date.\n"
+                    f"Current start date: {start.year}-{start.month:02d}, "
+                    f"end date: {end.year}-{end.month:02d}"
+                )
         elif self.aggregation_type in (None, "", "NONE"):
             pass
         else:

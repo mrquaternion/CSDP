@@ -2,18 +2,18 @@ import os
 from pathlib import Path
 
 from flask_wtf import FlaskForm
-from wtforms.fields import SubmitField, DateField, TimeField, SelectMultipleField, StringField
+from wtforms.fields import SubmitField, DateField, TimeField, SelectMultipleField, StringField, SelectField
 from wtforms.widgets import ListWidget, CheckboxInput
 from wtforms.validators import DataRequired, ValidationError
 
-from carbonpipeline.Processing.constants import VARIABLES_FOR_PREDICTOR
+from era5dp.Processing.constants import VARIABLES_FOR_PREDICTOR
 
 # ================== AmeriFlux predictors and gas flux ==================
-
 PREDICTORS = sorted(VARIABLES_FOR_PREDICTOR.keys())
+AGGREGATION_TYPE = ['Daily', 'Monthly']
 
-# =======================================================================
 
+# ================== Forms ==================
 class AreaTypeForm(FlaskForm):
     start_date = DateField(format='%Y-%m-%d', validators=[DataRequired()])
     end_date = DateField(format='%Y-%m-%d', validators=[DataRequired()])
@@ -52,11 +52,25 @@ class AreaTypeBoundingBoxForm(AreaTypeForm):
     east = StringField()
     south = StringField()
     west = StringField()
+    aggregation_type = SelectField(
+        'Aggregation Type (optional)',
+        choices=[(t, t) for t in AGGREGATION_TYPE],
+        validate_choice=False,
+        option_widget=CheckboxInput(),
+        widget=ListWidget(prefix_label=False),
+    )
 
 
 class AreaTypePolygonsForm(AreaTypeForm):
-    geojsons = StringField('GeoJSONs', validators=[DataRequired()])
+    geojsons = StringField('GeoJSONs')
     rid = StringField('Relative ID (optional)')
+    aggregation_type = SelectField(
+        'Aggregation Type (optional)',
+        choices=[(t, t) for t in AGGREGATION_TYPE],
+        validate_choice=False,
+        option_widget=CheckboxInput(),
+        widget=ListWidget(prefix_label=False),
+    )
 
     def validate_geojsons(self, field):
         if not os.path.exists(Path(field.data)):
@@ -65,5 +79,10 @@ class AreaTypePolygonsForm(AreaTypeForm):
 
 class CredentialsForm(FlaskForm):
     account = StringField('Account', validators=[DataRequired()])
-
     submit = SubmitField('Submit')
+
+
+class PostProcessingForm(FlaskForm):
+    memory = StringField('Memory', validators=[DataRequired()])
+    cpus = StringField('CPUs per task', validators=[DataRequired()])
+    time = StringField('Time', validators=[DataRequired()])

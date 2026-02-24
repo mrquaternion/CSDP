@@ -52,6 +52,10 @@ class APIRequest:
         else:
             return self._query_era5_hourly(zip_dir)
 
+    def expected_filename(self) -> str:
+        """Return deterministic ERA5 zip filename for this request."""
+        return self._filename_logic()
+
     def _query_era5_monthly(self, zip_dir) -> str:
         """
         Constructs and submits a download request to the CDS API for ERA5 single-level reanalysis data.
@@ -177,4 +181,3 @@ class APIRequest:
 
         # Case 6: single hour
         return f"ERA5_{years[0]}-{months[0]}-{days[0]}T{times[0]}.zip"
-

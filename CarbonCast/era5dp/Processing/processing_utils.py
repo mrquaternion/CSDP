@@ -1,6 +1,7 @@
 # carbonpipeline/processing_utils.py
 import numpy as np
-from carbonpipeline.Processing.constants import (
+from era5dp.Processing.constants import (
+    GRAVITATIONAL_ACC,
     ZERO_C_IN_K,
     DRY_AIR_MOLE_FRACTION_N2,
     DRY_AIR_MOLE_FRACTION_O2,
@@ -135,7 +136,8 @@ PROCESSORS = {
     'PPFD_IN': photosynthesis_photo_flux_density,
     'PPFD_OUT': photosynthesis_photo_flux_density,
     'CO2': dry_to_wet_co2_fraction,
-    'WTD': lambda x: x
+    'WTD': lambda x: x,
+    'ELEVATION': lambda x: x / GRAVITATIONAL_ACC,
 }
 
 
@@ -252,5 +254,10 @@ AGG_SCHEMA = {
     "WTD": {
         "daily": {"WTD_mean": "mean"},
         "monthly": {"WTD_mean": "mean"},
+    },
+
+    "ELEVATION": {
+      "daily": {"ELEVATION": "first"},
+      "monthly": {"ELEVATION": "first"},
     },
 }

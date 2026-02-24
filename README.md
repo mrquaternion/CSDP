@@ -1,6 +1,6 @@
-# CarbonSense Data Pipeline (CSDP)
+# CarbonCast
 
-`CSDP` is a command‑line workflow that enriches eddy-covariance (EC) station data with reanalysis variables from ERA5, and optionally gap‑fills AmeriFlux predictors. It also helps getting data to feed a neural network (previously used to analyze fires conditions across Canada). It operates in two main stages driven by YAML configuration files. It starts by querying data from the [Copernicus Data Store](https://cds.climate.copernicus.eu).
+`CarbonCast` is a command‑line workflow that enriches eddy-covariance (EC) station data with reanalysis variables from ERA5, and optionally gap‑fills AmeriFlux predictors. It also helps getting data to feed a neural network (previously used to analyze fires conditions across Canada). It operates in two main stages driven by YAML configuration files. It starts by querying data from the [Copernicus Data Store](https://cds.climate.copernicus.eu).
 
 > **Note:** There is 2 possible use cases of the pipeline. Both download ERA5 data but use it differently.
 > 
@@ -14,11 +14,13 @@ set of spatial regions (e.g., administrative boundaries, fire perimeters, or eco
 First, `git clone` the project to your desired local directory and go to `pipeline/`. Once this is done, please run the following commands:
 ```commandline
 conda env create -f environment.yaml
-conda activate carbon
+conda activate ccenv
 ```
 Easy as that! You are now all set up!
 
-## Core workflow
+## Core workflow (CLI only, no web app)
+Use this when you want to run everything locally from terminal commands and config files.
+
 **1. Prepare configuration**
 - Create a YAML file (please use the same structure as in the repo, `download_config.yaml`) describing [the date range, target predictors, geographic footprint, aggregation level, and an optional field name to label features](#opts).
 - Nothing as to be put in the `process_config.yaml` file *except* the desired prefix of your output file(s).
@@ -38,6 +40,19 @@ Easy as that! You are now all set up!
     - Clips data to each region's bounding box and converts ERA5 variables into AmeriFlux predictors with the `carbonepipeline/Processing/processing_utils.py` script.
     - Writes one NetCDF per region in `outputs/`, with optional daily or monthly aggregation.
     - If a CSV was supplied, then add a new column for each requested predictors with the corresponding data.
+
+## Web workflow (cluster-connected)
+Use this when you want to drive the pipeline from the Flask UI and sync data/jobs with a cluster (for example, with a valid Compute Canada account).
+
+1. Start the web app:
+```commandline
+flask --app web.app run
+```
+2. Fill the forms in the UI (query type, area type, configuration, credentials).
+3. Launch the remote monitoring workflow:
+- download step (with continuous sync to cluster storage),
+- post-processing step (submitted and monitored on the cluster),
+- output sync back to local `outputs/`.
 
 ## Reproducible examples
 ### Regions bound by a polygon
@@ -69,4 +84,3 @@ Right now, the processing type "Site Location" cannot process multiple files at 
 
 ## Contributing
 Contributions is welcome. I recognize that the code may not yet be perfectly structured and that documentation is still sparse. Any help in improving clarity, structure, and maintainability is especially appreciated.  
-

@@ -1,4 +1,4 @@
-name: csdpenv
+name: ccenv
 channels:
   - conda-forge
 dependencies:
@@ -7,15 +7,11 @@ dependencies:
   - pandas=2.3.3
   - xarray
   - netcdf4
-  - eccodes
   - rioxarray
   - dask
   - numexpr
   - pyyaml
   - beautifulsoup4
-  - flask
-  - flask-wtf
-  - pexpect
   - pip
   - pip:
       - -e .

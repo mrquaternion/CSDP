@@ -1,0 +1,33 @@
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Outputs Ready</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}">
+</head>
+<body>
+    <div class="page" style="max-width: 860px;">
+        <header class="header">
+            <div>
+                <p class="eyebrow">Carbon Pipeline</p>
+                <h1>Outputs Status</h1>
+            </div>
+            <div class="badge">v2</div>
+        </header>
+
+        <section class="card">
+            {% if can_view_outputs %}
+                <h2>Post-processing Completed</h2>
+                <p>Cluster processing and sync back to local machine finished successfully.</p>
+                <p><strong>Local outputs path:</strong></p>
+                <pre class="log-box">{{ artifacts_path }}</pre>
+            {% else %}
+                <h2>Outputs Not Ready Yet</h2>
+                <p>Post-processing and sync are not complete yet.</p>
+            {% endif %}
+
+            <a class="btn" href="{{ url_for('monitoring') }}">Back To Monitoring</a>
+        </section>
+    </div>
+</body>
+</html>

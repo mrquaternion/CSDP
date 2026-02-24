@@ -1,4 +1,6 @@
 # carbonpipeline/constants.py
+GRAVITATIONAL_ACC = 9.8
+
 ZERO_C_IN_K = 273.15
 
 DRY_AIR_MOLE_FRACTION_N2 = 0.7808
@@ -25,7 +27,8 @@ ERA5_VARIABLES = [
     "volumetric_soil_water_layer_2",
     "volumetric_soil_water_layer_3",
     "forecast_albedo",
-    "friction_velocity"
+    "friction_velocity",
+    "geopotential",
 ]
 
 SHORTNAME_TO_FULLNAME = {
@@ -48,7 +51,8 @@ SHORTNAME_TO_FULLNAME = {
     'swvl2': 'volumetric_soil_water_layer_2',
     'swvl3': 'volumetric_soil_water_layer_3',
     'fal': 'forecast_albedo',
-    'zust': 'friction_velocity'
+    'zust': 'friction_velocity',
+    'z': 'geopotential',
 }
 
 VARIABLES_FOR_PREDICTOR = {
@@ -82,5 +86,6 @@ VARIABLES_FOR_PREDICTOR = {
     "LE":        ['mean_surface_latent_heat_flux'],
     "PPFD_IN":   ['mean_surface_downward_short_wave_radiation_flux'],
     "PPFD_OUT":  ['mean_surface_downward_short_wave_radiation_flux', 'forecast_albedo'],
-    "WTD":       ['wtd']
+    "WTD":       ['wtd'],
+    "ELEVATION": ['geopotential'],
 }
