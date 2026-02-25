@@ -118,7 +118,7 @@ def render_postprocessing_job_script(slurm_account: str, memory: str, cpus: int,
             set -euo pipefail
 
             printf "\\nLoading required modules.\\n"
-            module load netcdf-mpi/4.9.2 mpi4py/4.0.3 proj/9.2.0 python/3.12 
+            module load proj/9.2.0 python/3.12 
 
             VENV_DIR="$SLURM_TMPDIR/ccenv"
 
@@ -130,10 +130,8 @@ def render_postprocessing_job_script(slurm_account: str, memory: str, cpus: int,
             REPO_DIR="$HOME/scratch/CarbonCast/carboncast"
             cd "$REPO_DIR"
 
-            printf "\\nInstalling CarbonSense Data Pipeline dependencies.\\n"
+            printf "\\nInstalling CarbonCast dependencies.\\n"
             pip install -e . --no-index
-
-            export LD_PRELOAD="$EBROOTOPENMPI/lib/libmpi.so"
 
             CONFIG_PATH="${{1:-$REPO_DIR/config/process_config.yml}}"
 

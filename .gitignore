@@ -9,10 +9,9 @@ carboncast/datasets/
 carboncast/manifests
 carboncast/outputs/
 carboncast/outputs_tmp/
-carboncast/config/postprocess_job.generated.sh
-carboncast/config/gas_flux_pred.generated.sh
-carboncast/config/config.yml
-carboncast/config/process_config.yml
+carboncast/config/*
+!carboncast/config/download_config_template.yaml
+!carboncast/config/process_config_template.yaml
 carboncast/research/
 carboncast/config/gas_flux_assets/
 visualization/

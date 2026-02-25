@@ -6,7 +6,8 @@ dependencies:
   - numpy=2.3.3
   - pandas=2.3.3
   - xarray
-  - netcdf4
+  - h5py
+  - h5netcdf
   - rioxarray
   - dask
   - numexpr

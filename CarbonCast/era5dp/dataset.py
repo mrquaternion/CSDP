@@ -29,7 +29,7 @@ class DatasetManager:
 
         # Fallback w/o Dask: open each file and combine
         datasets = [
-            xr.open_dataset(path, engine="netcdf4", drop_variables=["number", "expver"])
+            xr.open_dataset(path, engine="h5netcdf", drop_variables=["number", "expver"])
             for path in netcdf_paths
         ]
         merged = xr.combine_by_coords(datasets, combine_attrs="override")
@@ -295,7 +295,7 @@ class DatasetManager:
 
             output_path = os.path.join(tmp_dir, f"{region_id}.nc")
             chunk_ds = pd.DataFrame(predictor_lookup, index=region_df.index).to_xarray()
-            chunk_ds.to_netcdf(output_path, mode="w", format="NETCDF4", engine="netcdf4")
+            chunk_ds.to_netcdf(output_path, mode="w", format="NETCDF4", engine="h5netcdf")
 
             tmp_directories.append(tmp_dir)
         
@@ -311,7 +311,7 @@ class DatasetManager:
                 print(f"No chunks found in {tmp_dir}, skipping.")
                 continue
 
-            datasets = [xr.open_dataset(path, engine="netcdf4") for path in file_paths]
+            datasets = [xr.open_dataset(path, engine="h5netcdf") for path in file_paths]
             combined_ds = xr.combine_by_coords(datasets, combine_attrs="override").load()
 
             region_id = os.path.basename(tmp_dir)
@@ -398,7 +398,7 @@ class DatasetManager:
                 enc["dtype"] = np.float32
             encoding[v] = enc
 
-        dataset.to_netcdf(path, encoding=encoding, engine="netcdf4")
+        dataset.to_netcdf(path, encoding=encoding, engine="h5netcdf")
 
         if delete_source:
             src = Path(self.config.OUTPUT_PROCESSED_DIR) / f"{output_name}.nc"

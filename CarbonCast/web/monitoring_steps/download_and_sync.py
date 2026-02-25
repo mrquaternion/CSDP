@@ -1,6 +1,7 @@
 import os
 import platform
 import shutil
+import shlex
 import pexpect
 import subprocess
 import json
@@ -170,6 +171,13 @@ def download_and_sync(credential: str, data: Any | None, on_output=None):
         if sync_failure['error'] is not None:
             raise sync_failure['error']
 
+        # Stop periodic sync loop before final sync to avoid concurrent rsync overlap.
+        stop_sync_event.set()
+        sync_thread.join()
+
+        if sync_failure['error'] is not None:
+            raise sync_failure['error']
+
         # final sync once download has completed
         sync(
             credential=credential,
@@ -180,7 +188,8 @@ def download_and_sync(credential: str, data: Any | None, on_output=None):
         )
     finally:
         stop_sync_event.set()
-        sync_thread.join(timeout=max(RSYNC_SLEEP_TIME, 1))
+        if sync_thread.is_alive():
+            sync_thread.join(timeout=max(RSYNC_SLEEP_TIME, 1))
         if use_ssh_multiplex:
             stop_ssh_master(credential=credential, on_output=on_output)
 
@@ -210,6 +219,9 @@ def sync(
     if used_rsync:
         _remove_empty_dirs(LOCAL_UNZIP_DIR)
 
+    if finalize_wtd_cleanup:
+        _run_remote_co2_nccopy(credential=credential, on_output=on_output)
+
     emit_output(on_output, 'Transfer done!\n', 'sync')
     return output
 
@@ -221,6 +233,28 @@ def _remove_empty_dirs(root: Path):
             path.rmdir()
         except OSError:
             continue
+
+
+def _run_remote_co2_nccopy(credential: str, on_output=None):
+    remote_cmd = (
+        f"set -euo pipefail; "
+        f"module --quiet load netcdf-mpi/4.9.2; "
+        f"CO2_DIR=~/{REMOTE_DIR}/CO2; "
+        f"[ -d \"$CO2_DIR\" ] || exit 0; "
+        f"mapfile -t files < <(find \"$CO2_DIR\" -type f -name '*.nc' | sort); "
+        f"[ \"${{#files[@]}}\" -gt 0 ] || exit 0; "
+        f"[ \"${{#files[@]}}\" -le 1 ] || echo \"Warning: found ${{#files[@]}} CO2 files; using first.\"; "
+        f"src=\"${{files[0]}}\"; "
+        f"tmp=\"${{src}}.nccopy.tmp\"; "
+        f"echo \"Running remote nccopy on $src\"; "
+        f"nccopy -k netCDF-4 \"$src\" \"$tmp\"; "
+        f"mv -f \"$tmp\" \"$src\""
+    )
+    run(
+        ["ssh", *get_ssh_common_options(), credential, f"bash -lc {shlex.quote(remote_cmd)}"],
+        on_output=on_output,
+        output_stream="sync",
+    )
 
 
 def _build_rsync_cmd(
