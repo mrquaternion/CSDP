@@ -18,7 +18,69 @@ conda activate ccenv
 ```
 Easy as that! You are now all set up!
 
-## Core workflow (CLI only, no web app)
+## CarbonCast Setup (CLI/Web)
+
+#### Step 1: SSH connection requirements
+1. Know the name of the machine you want to connect to.
+2. Know your username.
+3. Know your password or have an SSH key (see Step 2).
+4. Be registered for MFA (Duo Mobile is the recommended method).
+
+#### Step 2: Generate SSH key (skip if password auth)
+Reference: https://docs.github.com/en/authentication/connecting-to-github-with-ssh/generating-a-new-ssh-key-and-adding-it-to-the-ssh-agent
+1. Generate a new SSH key if you do not already have one.
+2. Run `ssh-keygen -t ed25519 -C "your_email@example.com"` (replace with your email).
+3. Press Enter to accept the default location.
+4. Set a secure passphrase you can remember.
+5. Start the agent: `eval "$(ssh-agent -s)"`
+6. Add your key: `ssh-add ~/.ssh/id_ed25519`
+7. Enter your passphrase once.
+8. Continue to Step 3.
+
+#### Step 3: Add SSH key to DRAC / Alliance (skip if password auth)
+Reference: https://docs.alliancecan.ca/wiki/SSH_Keys
+1. Print and copy your public key: `cat ~/.ssh/id_ed25519.pub`
+2. Sign in to https://ccdb.alliancecan.ca/security/login
+3. Go to `My Account` -> `SSH Keys`.
+4. Paste the key, add a description, and confirm.
+5. Wait a few minutes for propagation.
+
+#### Step 4: Setup CDS API key
+Reference: https://cds.climate.copernicus.eu/how-to-api
+1. Configure your CDS API key (no package install required beyond the normal app environment).
+
+#### Step 5: Recommended SSH config for Alliance clusters
+If passphrase prompts keep appearing in the web workflow, ensure keychain settings apply to your cluster host (not only GitHub):
+
+```sshconfig
+Host github.com
+  AddKeysToAgent yes
+  UseKeychain yes
+  IdentityFile ~/.ssh/id_ed25519
+
+Host alliance-cluster
+  HostName <cluster_host>   # e.g. narval.alliancecan.ca 
+  User <your_alliance_username>
+  AddKeysToAgent yes
+  UseKeychain yes
+  IdentityFile ~/.ssh/id_ed25519
+  ControlMaster auto
+  ControlPersist 10m
+  ControlPath /tmp/csdp-ssh-%C
+
+Host *
+  ServerAliveInterval 60
+  ServerAliveCountMax 5
+```
+
+Then run once:
+
+```commandline
+ssh-add --apple-use-keychain ~/.ssh/id_ed25519
+ssh alliance-cluster
+```
+
+## CLI workflow (locally)
 Use this when you want to run everything locally from terminal commands and config files.
 
 **1. Prepare configuration**
@@ -81,6 +143,3 @@ for `process_config_geojsons`.
 Saving a separate file for each region (polygon) is not always optimal, especially when dealing with more than a thousand regions. Depending on the size of each region, the storage requirements can become very large. For this reason, it is recommended to run the pipeline on **(1) an external hard drive** or **(2) a computing cluster with sufficient storage**.
 
 Right now, the processing type "Site Location" cannot process multiple files at the same time. However, this could be changed in the future.
-
-## Contributing
-Contributions is welcome. I recognize that the code may not yet be perfectly structured and that documentation is still sparse. Any help in improving clarity, structure, and maintainability is especially appreciated.  
