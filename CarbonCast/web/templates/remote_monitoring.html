@@ -210,6 +210,7 @@
                             </div>
                         </div>
                         <button class="btn" id="start-postprocessing-btn" type="button">Start Post-processing</button>
+                        <button class="btn" id="pull-postprocessing-btn" type="button" style="display: none;">Pull Post-processing Outputs</button>
                         <a class="btn" id="view-outputs-btn" href="{{ url_for('monitoring.outputs_ready') }}" style="display: none;">View Synced Outputs</a>
 
                         {% if query_type == "gas_flux_predictions" %}
@@ -227,8 +228,13 @@
                                 <label for="gasflux-time">Time</label>
                                 <input class="input" id="gasflux-time" type="text" value="08:00:00" placeholder="HH:MM:SS">
                             </div>
+                            <div class="workflow-field">
+                                <label for="gasflux-gpus">GPUs</label>
+                                <input class="input" id="gasflux-gpus" type="text" value="1" placeholder="e.g. 1">
+                            </div>
                         </div>
                         <button class="btn" id="start-gasflux-btn" type="button">Start Gas Flux</button>
+                        <button class="btn" id="pull-gasflux-btn" type="button" style="display: none;">Pull Gas Flux CSVs</button>
                         {% endif %}
 
                         <div class="monitoring-status-row">

@@ -1,7 +1,13 @@
 import textwrap
 
 
-def gas_flux_pred_job_script(slurm_account: str, memory: str, cpus: int, wall_time: str) -> str:
+def gas_flux_pred_job_script(
+    slurm_account: str,
+    memory: str,
+    cpus: int,
+    wall_time: str,
+    gpus: int,
+) -> str:
     return textwrap.dedent(
         f"""\
             #!/bin/bash
@@ -9,7 +15,7 @@ def gas_flux_pred_job_script(slurm_account: str, memory: str, cpus: int, wall_ti
             #SBATCH --mem={memory}
             #SBATCH --time={wall_time}
             #SBATCH --cpus-per-task={cpus}
-            #SBATCH --gres=gpu:1
+            #SBATCH --gres=gpu:{gpus}
             #SBATCH --output=slurm-%j.out
             #SBATCH --error=slurm-%j.err
 

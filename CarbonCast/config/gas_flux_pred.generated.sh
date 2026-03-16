@@ -1,16 +1,14 @@
 #!/bin/bash
 #SBATCH --account=def-sonol
-#SBATCH --mem=128G
-#SBATCH --time=03:00:00
-#SBATCH --cpus-per-task=16
-#SBATCH --gres=gpu:1
+#SBATCH --mem=32G
+#SBATCH --time=08:00:00
+#SBATCH --cpus-per-task=8
+#SBATCH --gres=gpu:4
 #SBATCH --output=slurm-%j.out
 #SBATCH --error=slurm-%j.err
 
-set -euo pipefail
-
 printf "\nLoading required modules.\n"
-module load StdEnv/2023 openmpi/4.1.5 netcdf-mpi/4.9.2 mpi4py/4.0.3 proj/9.2.0 python/3.12
+module load proj/9.2.0 python/3.12
 REPO_DIR="$HOME/scratch/CarbonCast/EcoPerceiver"
 
 printf "\nCreating the environment."
@@ -21,10 +19,9 @@ pip install --upgrade pip --no-index
 
 printf "\nInstalling EcoPerceiver dependencies."
 cd "$REPO_DIR"
-pip install -e . --no-cache-dir --ignore-installed --no-index
+pip install -e . --no-cache-dir --no-index
 pip install scipy --no-index
-
-export LD_PRELOAD=$EBROOTOPENMPI/lib/libmpi.so
+pip install h5py h5netcdf --no-index
 
 printf "\nExecuting the inference script."
 cd eval/

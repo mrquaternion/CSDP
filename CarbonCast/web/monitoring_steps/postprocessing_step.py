@@ -104,6 +104,28 @@ def validate_optional_job_resources(
     return _validate_job_resources(memory, cpus_raw, wall_time)
 
 
+def validate_optional_gas_flux_job_resources(
+    payload: dict[str, Any] | None,
+    fallback_memory: str,
+    fallback_cpus: int,
+    fallback_wall_time: str,
+    fallback_gpus: int,
+) -> tuple[str, int, str, int]:
+    memory, cpus, wall_time = validate_optional_job_resources(
+        payload=payload,
+        fallback_memory=fallback_memory,
+        fallback_cpus=fallback_cpus,
+        fallback_wall_time=fallback_wall_time,
+    )
+
+    cfg = payload or {}
+    gpus_raw = str(cfg.get("gpus", "")).strip() or str(fallback_gpus)
+    if not gpus_raw.isdigit() or int(gpus_raw) <= 0:
+        raise ValueError("GPUs must be a positive integer.")
+
+    return memory, cpus, wall_time, int(gpus_raw)
+
+
 def render_postprocessing_job_script(slurm_account: str, memory: str, cpus: int, wall_time: str) -> str:
     return textwrap.dedent(
         f"""\
@@ -168,6 +190,7 @@ def write_generated_gas_flux_job_script(
     memory: str,
     cpus: int,
     wall_time: str,
+    gpus: int,
     output_path: Path | None = None,
 ) -> Path:
     job_script_path = output_path or (LOCAL_CONFIG_DIR / "gas_flux_pred.generated.sh")
@@ -178,6 +201,7 @@ def write_generated_gas_flux_job_script(
             memory=memory,
             cpus=cpus,
             wall_time=wall_time,
+            gpus=gpus,
         ),
         encoding="utf-8",
     )
@@ -759,26 +783,116 @@ def monitor_postprocessing_job(
         time.sleep(poll_interval_seconds)
 
 
-def fetch_remote_outputs(
+def _list_remote_files_created_after(
     account: str,
-    remote_pipeline_dir: str,
+    remote_base_dir: str,
+    created_after: str,
+    suffixes: tuple[str, ...],
+) -> list[str]:
+    suffixes_payload = json.dumps([suffix.lower() for suffix in suffixes])
+    remote_cmd = textwrap.dedent(
+        f"""\
+        python3 - <<'PY'
+        import json
+        from datetime import datetime, timezone
+        from pathlib import Path
+
+        base = Path.home() / {json.dumps(remote_base_dir)}
+        cutoff = datetime.fromisoformat({json.dumps(created_after)})
+        if cutoff.tzinfo is None:
+            cutoff = cutoff.replace(tzinfo=timezone.utc)
+        else:
+            cutoff = cutoff.astimezone(timezone.utc)
+
+        suffixes = tuple(json.loads({json.dumps(suffixes_payload)}))
+
+        if base.is_dir():
+            for path in sorted(base.rglob("*")):
+                if not path.is_file():
+                    continue
+                if suffixes and path.suffix.lower() not in suffixes:
+                    continue
+                mtime = datetime.fromtimestamp(path.stat().st_mtime, tz=timezone.utc)
+                if mtime >= cutoff:
+                    print(path.relative_to(base))
+        PY
+        """
+    )
+    output = _run_remote_command(account, remote_cmd)
+    return [line.strip() for line in output.splitlines() if line.strip()]
+
+
+def _rsync_remote_files(
+    account: str,
+    remote_base_dir: str,
+    relative_paths: list[str],
+    local_out_dir: Path,
     emit_output: Callable[[str, str], None],
 ) -> str:
-    local_out_dir = (LOCAL_CONFIG_DIR.parent / "outputs")
     local_out_dir.mkdir(parents=True, exist_ok=True)
 
-    run(
-        [
-            "rsync",
-            "-e",
-            get_rsync_ssh_command(),
-            "-avh",
-            "--info=progress2",
-            f"{account}:~/{remote_pipeline_dir}/outputs/",
-            str(local_out_dir),
-        ],
-        on_output=lambda text, stream="sync": emit_output(text, stream),
-        output_stream="sync",
-    )
+    if not relative_paths:
+        raise RuntimeError("No remote files matched this job.")
+
+    emit_output(f"Pulling {len(relative_paths)} remote files...\n", "sync")
+    for rel_path in relative_paths:
+        destination_dir = (local_out_dir / Path(rel_path).parent).resolve()
+        destination_dir.mkdir(parents=True, exist_ok=True)
+        run(
+            [
+                "rsync",
+                "-e",
+                get_rsync_ssh_command(),
+                "-avh",
+                "--info=progress2",
+                f"{account}:~/{remote_base_dir}/{rel_path}",
+                str(destination_dir),
+            ],
+            on_output=lambda text, stream="sync": emit_output(text, stream),
+            output_stream="sync",
+        )
 
     return str(local_out_dir.resolve())
+
+
+def fetch_remote_postprocessing_outputs_for_job(
+    account: str,
+    remote_pipeline_dir: str,
+    created_after: str,
+    emit_output: Callable[[str, str], None],
+) -> str:
+    remote_outputs_dir = f"{remote_pipeline_dir}/outputs"
+    relative_paths = _list_remote_files_created_after(
+        account=account,
+        remote_base_dir=remote_outputs_dir,
+        created_after=created_after,
+        suffixes=(".nc",),
+    )
+    return _rsync_remote_files(
+        account=account,
+        remote_base_dir=remote_outputs_dir,
+        relative_paths=relative_paths,
+        local_out_dir=LOCAL_CONFIG_DIR.parent / "outputs",
+        emit_output=emit_output,
+    )
+
+
+def fetch_remote_gas_flux_csvs_for_job(
+    account: str,
+    remote_repo_dir: str,
+    created_after: str,
+    emit_output: Callable[[str, str], None],
+) -> str:
+    relative_paths = _list_remote_files_created_after(
+        account=account,
+        remote_base_dir=remote_repo_dir,
+        created_after=created_after,
+        suffixes=(".csv",),
+    )
+    return _rsync_remote_files(
+        account=account,
+        remote_base_dir=remote_repo_dir,
+        relative_paths=relative_paths,
+        local_out_dir=LOCAL_CONFIG_DIR.parent / "gas_flux_outputs",
+        emit_output=emit_output,
+    )

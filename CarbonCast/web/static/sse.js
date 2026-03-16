@@ -5,6 +5,8 @@ document.addEventListener("DOMContentLoaded", () => {
     const startDownloadBtn = document.getElementById('start-download-btn');
     const startPostBtn = document.getElementById('start-postprocessing-btn');
     const startGasFluxBtn = document.getElementById('start-gasflux-btn');
+    const pullPostBtn = document.getElementById('pull-postprocessing-btn');
+    const pullGasFluxBtn = document.getElementById('pull-gasflux-btn');
     const statusEl = document.getElementById('transfer-status');
     const viewOutputsBtn = document.getElementById('view-outputs-btn');
     const memoryInput = document.getElementById('post-memory');
@@ -14,6 +16,7 @@ document.addEventListener("DOMContentLoaded", () => {
     const gasFluxMemoryInput = document.getElementById('gasflux-memory');
     const gasFluxCpusInput = document.getElementById('gasflux-cpus');
     const gasFluxTimeInput = document.getElementById('gasflux-time');
+    const gasFluxGpusInput = document.getElementById('gasflux-gpus');
     let downloadBuffer = '';
     let syncBuffer = '';
     let errorBuffer = '';
@@ -37,6 +40,8 @@ document.addEventListener("DOMContentLoaded", () => {
             downloading: 'Downloading',
             postprocessing: 'Postprocessing',
             gasflux: 'Gas Flux',
+            pulling_postprocessing: 'Pulling Outputs',
+            pulling_gasflux: 'Pulling Gas Flux CSVs',
             done: 'Done',
             failed: 'Failed',
         };
@@ -73,6 +78,14 @@ document.addEventListener("DOMContentLoaded", () => {
         }
         if (startGasFluxBtn) {
             startGasFluxBtn.disabled = !Boolean(state.can_start_gas_flux);
+        }
+        if (pullPostBtn) {
+            pullPostBtn.disabled = !Boolean(state.can_pull_postprocessing);
+            pullPostBtn.style.display = state.can_pull_postprocessing ? 'inline-flex' : 'none';
+        }
+        if (pullGasFluxBtn) {
+            pullGasFluxBtn.disabled = !Boolean(state.can_pull_gas_flux);
+            pullGasFluxBtn.style.display = state.can_pull_gas_flux ? 'inline-flex' : 'none';
         }
         if (viewOutputsBtn) {
             viewOutputsBtn.style.display = state.can_view_outputs ? 'inline-flex' : 'none';
@@ -112,11 +125,12 @@ document.addEventListener("DOMContentLoaded", () => {
             time: timeInput ? timeInput.value.trim() : '',
             slurm_account: slurmAccountInput ? slurmAccountInput.value.trim() : '',
         };
-        if (gasFluxMemoryInput || gasFluxCpusInput || gasFluxTimeInput) {
+        if (gasFluxMemoryInput || gasFluxCpusInput || gasFluxTimeInput || gasFluxGpusInput) {
             payload.gas_flux_job_config = {
                 memory: gasFluxMemoryInput ? gasFluxMemoryInput.value.trim() : '',
                 cpus: gasFluxCpusInput ? gasFluxCpusInput.value.trim() : '',
                 time: gasFluxTimeInput ? gasFluxTimeInput.value.trim() : '',
+                gpus: gasFluxGpusInput ? gasFluxGpusInput.value.trim() : '',
             };
         }
 
@@ -152,6 +166,7 @@ document.addEventListener("DOMContentLoaded", () => {
                 memory: gasFluxMemoryInput ? gasFluxMemoryInput.value.trim() : '',
                 cpus: gasFluxCpusInput ? gasFluxCpusInput.value.trim() : '',
                 time: gasFluxTimeInput ? gasFluxTimeInput.value.trim() : '',
+                gpus: gasFluxGpusInput ? gasFluxGpusInput.value.trim() : '',
             },
         };
 
@@ -168,6 +183,50 @@ document.addEventListener("DOMContentLoaded", () => {
             }
             if (startGasFluxBtn) {
                 startGasFluxBtn.disabled = false;
+            }
+            return;
+        }
+
+        applyState(data);
+        startStream();
+    }
+
+    async function pullPostprocessingOutputs() {
+        if (pullPostBtn) {
+            pullPostBtn.disabled = true;
+        }
+
+        const response = await fetch('/remote-monitoring/pull-postprocessing-outputs', { method: 'POST' });
+        const data = await response.json();
+        if (!response.ok || !data.ok) {
+            errorEl.textContent = data.error || 'Unknown error.';
+            if (statusEl) {
+                statusEl.textContent = 'Failed';
+            }
+            if (pullPostBtn) {
+                pullPostBtn.disabled = false;
+            }
+            return;
+        }
+
+        applyState(data);
+        startStream();
+    }
+
+    async function pullGasFluxOutputs() {
+        if (pullGasFluxBtn) {
+            pullGasFluxBtn.disabled = true;
+        }
+
+        const response = await fetch('/remote-monitoring/pull-gas-flux-outputs', { method: 'POST' });
+        const data = await response.json();
+        if (!response.ok || !data.ok) {
+            errorEl.textContent = data.error || 'Unknown error.';
+            if (statusEl) {
+                statusEl.textContent = 'Failed';
+            }
+            if (pullGasFluxBtn) {
+                pullGasFluxBtn.disabled = false;
             }
             return;
         }
@@ -253,6 +312,12 @@ document.addEventListener("DOMContentLoaded", () => {
     }
     if (startGasFluxBtn) {
         startGasFluxBtn.addEventListener('click', startGasFlux);
+    }
+    if (pullPostBtn) {
+        pullPostBtn.addEventListener('click', pullPostprocessingOutputs);
+    }
+    if (pullGasFluxBtn) {
+        pullGasFluxBtn.addEventListener('click', pullGasFluxOutputs);
     }
     startStream();
     scrollToBottom(downloadEl);
