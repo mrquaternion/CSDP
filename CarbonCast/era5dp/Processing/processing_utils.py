@@ -235,9 +235,9 @@ AGG_SCHEMA = {
     # Soil water content
     **{f"SWC_{k}": {
         "daily": {f"SWC_{k}_mean": "mean", f"SWC_{k}_min": "min",
-                    f"SWC_{k}_delta": lambda s: s.iloc[-1] - s.iloc[0]},
+                    f"SWC_{k}_delta": "delta"},
         "monthly": {f"SWC_{k}_mean": "mean", f"SWC_{k}_min": "min",
-                    f"SWC_{k}_delta": lambda s: s.iloc[-1] - s.iloc[0]},
+                    f"SWC_{k}_delta": "delta"},
     } for k in range(1, 6)},
 
     # Soil temperature

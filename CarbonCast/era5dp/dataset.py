@@ -340,10 +340,10 @@ class DatasetManager:
             agg_schema = {key: AGG_SCHEMA[key] for key in variable_names if key in AGG_SCHEMA}
 
             aggregated_ds = xr.Dataset({
-                name: getattr(
+                name: self._aggregate_resampled_variable(
                     dataset[predictor].resample(valid_time=resample_rules[aggregation_type]),
-                    func
-                )()
+                    func,
+                )
                 for predictor, agg_types in agg_schema.items()
                 for agg_dict in [agg_types.get(aggregation_type.lower(), {})]
                 if agg_dict != "DROP"
@@ -363,6 +363,19 @@ class DatasetManager:
             )
 
             print(f"✅ Aggregation saved to {save_path}")
+
+    @staticmethod
+    def _aggregate_resampled_variable(
+        resampled,
+        operation: str,
+    ) -> xr.DataArray:
+        """Apply a supported aggregation operation to a resampled DataArray."""
+        if operation == "delta":
+            return resampled.last() - resampled.first()
+        aggregator = getattr(resampled, operation, None)
+        if aggregator is None:
+            raise ValueError(f"Unsupported aggregation operation: {operation}")
+        return aggregator()
 
     def save_netcdf(
         self,
