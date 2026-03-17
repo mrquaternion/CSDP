@@ -85,7 +85,7 @@ class CommandExecutor:
         self.start = config_dict.get("start-date")
         self.end = config_dict.get("end-date")
         self.predictors = config_dict.get("ameriflux-predictors")
-        self.aggregation_type = config_dict.get("aggregation-type")
+        self.aggregation_type = config_dict.get("aggregation-type").upper()
         self.id_field = config_dict.get("id-field")
 
         self.all_geometries: dict[str | int, Geometry] = {}
