@@ -225,6 +225,7 @@ def prepare_remote_postprocessing_assets(
         config_data = yaml.safe_load(fh) or {}
 
     config_data["action"] = "process"
+    config_data["geometries-directory"] = None
 
     manifest_path_value = config_data.get("manifest")
     manifest_path = Path(manifest_path_value) if manifest_path_value else None

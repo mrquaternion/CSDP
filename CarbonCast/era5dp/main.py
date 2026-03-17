@@ -81,7 +81,12 @@ class CommandExecutor:
         self.ameriflux_csv = config_dict.get("data-file")
         self.location = config_dict.get("location-coordinates")
         self.area = config_dict.get("bbox-coordinates")
-        self.geometries_dir = self.validate_geometries_dir(config_dict.get("geometries-directory"))
+        geometries_dir = config_dict.get("geometries-directory")
+        self.geometries_dir = (
+            self.validate_geometries_dir(geometries_dir)
+            if self.action == "download"
+            else None
+        )
         self.start = config_dict.get("start-date")
         self.end = config_dict.get("end-date")
         self.predictors = config_dict.get("ameriflux-predictors")
