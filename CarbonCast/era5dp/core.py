@@ -177,7 +177,8 @@ class CarbonPipeline:
         rect_regions: dict[str | int, list[float]],
         output_name: str,
         geometry_mode: str,
-        aggregation_type: str
+        aggregation_type: str,
+        delete_source_after_aggregation: bool | None = None,
     ) -> None:
         """Process downloaded ERA5 data for area/box modes."""
         print(f"Processing {output_name}...")
@@ -217,16 +218,19 @@ class CarbonPipeline:
         # Aggregation --> not available for global option because too much data --> not optimized with chunk loading
         resample_rules = {"DAILY": "1D", "MONTHLY": "1ME"}
         if aggregation_type in resample_rules.keys(): # AGGREGATION
-            while True:
-                user_input = input("\nDo you want to delete the original files after aggregation? (Y/n): ").strip()
-                if user_input.upper() == "Y":
-                    delete_source = True
-                    break
-                elif user_input.lower() == "n":
-                    delete_source = False
-                    break
-                else:
-                    print("Invalid input: please enter 'Y' to delete them, or 'n' to keep them.")
+            if delete_source_after_aggregation is None:
+                while True:
+                    user_input = input("\nDo you want to delete the original files after aggregation? (Y/n): ").strip()
+                    if user_input.upper() == "Y":
+                        delete_source = True
+                        break
+                    elif user_input.lower() == "n":
+                        delete_source = False
+                        break
+                    else:
+                        print("Invalid input: please enter 'Y' to delete them, or 'n' to keep them.")
+            else:
+                delete_source = delete_source_after_aggregation
 
             self.dataset_manager.aggregate_dataset(region_datasets_by_id, resample_rules, aggregation_type, output_name, delete_source)
         else: # NO AGGREGATION

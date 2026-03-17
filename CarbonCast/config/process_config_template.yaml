@@ -2,3 +2,4 @@
 action: process
 output-filename:    # prefix of the output files
 manifest:           # path of the JSON manifests
+delete-source-after-aggregation:  # true/false | optional, skips interactive prompt when aggregating

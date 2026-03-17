@@ -224,8 +224,13 @@ def prepare_remote_postprocessing_assets(
     with config_path.open("r", encoding="utf-8") as fh:
         config_data = yaml.safe_load(fh) or {}
 
+    aggregation_type = config_data.get("aggregation-type")
     config_data["action"] = "process"
     config_data["geometries-directory"] = None
+    config_data["delete-source-after-aggregation"] = (
+        isinstance(aggregation_type, str)
+        and aggregation_type.strip().lower() not in {"", "none"}
+    )
 
     manifest_path_value = config_data.get("manifest")
     manifest_path = Path(manifest_path_value) if manifest_path_value else None

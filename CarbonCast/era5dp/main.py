@@ -90,7 +90,11 @@ class CommandExecutor:
         self.start = config_dict.get("start-date")
         self.end = config_dict.get("end-date")
         self.predictors = config_dict.get("ameriflux-predictors")
-        self.aggregation_type = config_dict.get("aggregation-type").upper()
+        aggregation_type = config_dict.get("aggregation-type")
+        self.aggregation_type = aggregation_type.upper() if isinstance(aggregation_type, str) else aggregation_type
+        self.delete_source_after_aggregation = self._normalize_optional_bool(
+            config_dict.get("delete-source-after-aggregation")
+        )
         self.id_field = config_dict.get("id-field")
 
         self.all_geometries: dict[str | int, Geometry] = {}
@@ -98,6 +102,21 @@ class CommandExecutor:
         self.special_preds: SpecialPredictors | None = None # SpecialPredictors object
         self.era5_vars: list[str] | None = None # List of variables to download from ERA5
         self.geometry_mode: ProcessingType
+
+    @staticmethod
+    def _normalize_optional_bool(value):
+        """Convert common YAML/string boolean values while preserving None."""
+        if value is None:
+            return None
+        if isinstance(value, bool):
+            return value
+        if isinstance(value, str):
+            lowered = value.strip().lower()
+            if lowered in {"true", "1", "yes", "y"}:
+                return True
+            if lowered in {"false", "0", "no", "n", ""}:
+                return False
+        return bool(value)
 
     @staticmethod
     def validate_geometries_dir(coords_file: str | None) -> str | None:
@@ -260,10 +279,12 @@ class CommandExecutor:
                     else:
                         # fallback if the client doesn't want gap-filling to the given dataset
                         self.pipeline.run_area_process(ds, predictors, start, end, rect_regions,
-                                                       output_name, self.geometry_mode, self.aggregation_type)
+                                                       output_name, self.geometry_mode, self.aggregation_type,
+                                                       self.delete_source_after_aggregation)
                 case _:
                     self.pipeline.run_area_process(ds, predictors, start, end, rect_regions,
-                                                   output_name, self.geometry_mode, self.aggregation_type)
+                                                   output_name, self.geometry_mode, self.aggregation_type,
+                                                   self.delete_source_after_aggregation)
 
     @staticmethod
     def _generate_region_id(region: list[float], geometry_idx: int) -> str:
