@@ -196,7 +196,7 @@ class CarbonPipeline:
             print("➕ Adding WTD column...")
             merged_era5_ds = self.dataset_manager.add_wtd_column(merged_era5_ds, ds_wtd)
 
-        if geometry_mode == "Box":
+        if geometry_mode == "Boxes":
             region_datasets = self.dataset_manager.filter_coordinates(ds=merged_era5_ds, regions=rect_regions)
         else:
             merged_era5_df = merged_era5_ds.to_dataframe().reset_index()
