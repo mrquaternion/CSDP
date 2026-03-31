@@ -31,12 +31,18 @@ def volumetric_soil_water(SWC_decimal):
 
 # -------------- Variable processing --------------
 def wind_speed_magnitude(u10, v10):
+    """
+    Source: https://confluence.ecmwf.int/pages/viewpage.action?pageId=133262398
+    """
     return np.hypot(u10, v10)
 
 
 def wind_speed_direction(u10, v10):
-    theta = np.degrees(np.arctan2(u10, v10))
-    return (theta + 360) % 360
+    """
+    Source: https://confluence.ecmwf.int/pages/viewpage.action?pageId=133262398
+    """
+    res = np.arctan2(u10, v10)
+    return (180 + (180 / np.pi) * res) % 360
 
 
 def relative_humidity(t2m, d2m):
@@ -72,7 +78,7 @@ def shortwave_out(avg_sdswrf, fal):
 
 
 def longwave_out(avg_sdlwrf, avg_snlwrf):
-    return avg_snlwrf - avg_sdlwrf
+    return avg_sdlwrf - avg_snlwrf
 
 
 def net_radiation(avg_sdswrf, avg_sdlwrf, avg_snlwrf, fal):
@@ -99,7 +105,7 @@ def dry_to_wet_co2_fraction(t2m, d2m, sp, XCO2_dry):
 
 def soil_heat_flux(avg_ishf, avg_slhtf, avg_sdswrf, avg_sdlwrf, avg_snlwrf, fal):
     NETRAD = net_radiation(avg_sdswrf, avg_sdlwrf, avg_snlwrf, fal)
-    return NETRAD - avg_ishf - avg_slhtf
+    return NETRAD + avg_ishf + avg_slhtf
 
 
 def photosynthesis_photo_flux_density(avg_sdswrf, fal=None):
@@ -122,7 +128,9 @@ PROCESSORS = {
     'NETRAD': net_radiation,
     'WS': wind_speed_magnitude,
     'WD': wind_speed_direction,
-    'G': soil_heat_flux,
+    'G': soil_heat_flux, # affected by those 2 under
+    'H': lambda x: -1 * x, # https://codes.ecmwf.int/grib/param-db/231
+    'LE': lambda x: -1 * x, # https://codes.ecmwf.int/grib/param-db/146
     'TS_1': kelvin_to_celsius,
     'TS_2': kelvin_to_celsius,
     'TS_3': kelvin_to_celsius,
@@ -135,7 +143,7 @@ PROCESSORS = {
     'SWC_5': lambda x: x * 100,
     'PPFD_IN': photosynthesis_photo_flux_density,
     'PPFD_OUT': photosynthesis_photo_flux_density,
-    'CO2': dry_to_wet_co2_fraction,
+    'CO2': dry_to_wet_co2_fraction, 
     'WTD': lambda x: x,
     'ELEVATION': lambda x: x / GRAVITATIONAL_ACC,
 }
