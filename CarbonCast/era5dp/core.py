@@ -199,18 +199,10 @@ class CarbonPipeline:
         if geometry_mode == "Boxes":
             region_datasets = self.dataset_manager.filter_coordinates(ds=merged_era5_ds, regions=rect_regions)
         else:
-            merged_era5_df = merged_era5_ds.to_dataframe().reset_index()
-            merged_era5_df["region_id"] = list(rect_regions.keys())[0]
-            merged_era5_df = (
-                merged_era5_df
-                .set_index(["region_id", "latitude", "longitude", "valid_time"])
-                .sort_index()
-            )
-            region_datasets = [merged_era5_df.to_xarray()]
+            region_datasets = [merged_era5_ds.expand_dims(region_id=[list(rect_regions.keys())[0]])]
 
         # Conversion to AMF predictors and intelligent chunk writing
-        index_columns = ["region_id", "latitude", "longitude", "valid_time"]
-        tmp_dirs = self.dataset_manager.write_chunks(region_datasets, predictors, index_columns)
+        tmp_dirs = self.dataset_manager.write_chunks(region_datasets, predictors)
 
         # Reopen the chunks for each region and create the NetCDF files
         region_datasets_by_id = self.dataset_manager.concat_chunks(tmp_dirs)
@@ -307,7 +299,7 @@ class CarbonPipeline:
         dsets = {}
         for f in files:
             region_id = Path(f).stem.split("_")[-1]  # ex: output_name_region_1 -> "1"
-            dsets[region_id] = xr.open_dataset(f, decode_times=True).load()
+            dsets[region_id] = xr.open_dataset(f, decode_times=True, chunks="auto")
         return dsets
 
     @staticmethod

@@ -27,43 +27,35 @@ class DatasetManager:
         if not netcdf_paths:
             return None
 
-        # Fallback w/o Dask: open each file and combine
-        datasets = [
-            xr.open_dataset(path, engine="h5netcdf", drop_variables=["number", "expver"])
-            for path in netcdf_paths
-        ]
-        merged = xr.combine_by_coords(datasets, combine_attrs="override")
-        return merged
+        def _drop_unneeded_vars(ds: xr.Dataset) -> xr.Dataset:
+            removable = [v for v in ["number", "expver"] if v in ds.variables]
+            return ds.drop_vars(removable) if removable else ds
+
+        return xr.open_mfdataset(
+            sorted(netcdf_paths),
+            engine="h5netcdf",
+            combine="by_coords",
+            preprocess=_drop_unneeded_vars,
+            combine_attrs="override",
+            chunks="auto",
+        )
 
     def add_co2_column(self, ds_era5: xr.Dataset, ds_co2: xr.Dataset) -> xr.Dataset:
         """Add CO2 column aligned to the ERA5 grid and monthly time axis."""
-
-        # Rename CO2 indexes so it matches ERA5 indexes
         ds_co2_renamed = ds_co2.rename({"time": "valid_time", "lat": "latitude", "lon": "longitude"})
-
-        # Add column year_month to both dataset
         ds_co2_renamed = self._add_year_month(ds_co2_renamed, "valid_time")
-        ds_era5_renamed = self._add_year_month(ds_era5, "valid_time")
+        ds_era5 = self._add_year_month(ds_era5, "valid_time")
 
-        ds_co2_monthly = ds_co2_renamed.groupby('year_month').mean(dim='valid_time')
-
-        # Cut for dates for which we only queried through ERA5
-        unique_months_era5 = np.unique(ds_era5_renamed.year_month.values)
-        ds_co2_monthly_cut = ds_co2_monthly.sel(year_month=unique_months_era5)
-        ds_co2_sortby = ds_co2_monthly_cut.sortby(['latitude', 'longitude'], ascending=[False, False])
-
-        ds_era5_coord_adjusted = self._assign_closest_lat_lon(ds_era5, ds_co2_monthly_cut, "latitude", "longitude")
-        ds_era5_sortby = ds_era5_coord_adjusted.sortby(["lat", "lon"], ascending=[False, False])
-
-        co2_selected = ds_co2_sortby["xco2"].sel(
-            year_month=ds_era5_sortby["year_month"],
-            latitude=ds_era5_sortby["lat"],
-            longitude=ds_era5_sortby["lon"]
+        ds_co2_monthly = ds_co2_renamed.groupby("year_month").mean(dim="valid_time")
+        co2_selected = ds_co2_monthly["xco2"].sel(year_month=ds_era5["year_month"])
+        co2_selected = co2_selected.sel(
+            latitude=ds_era5["latitude"],
+            longitude=ds_era5["longitude"],
+            method="nearest",
         )
 
-        ds_era5_sortby["xco2"] = (("valid_time", "latitude", "longitude"), co2_selected.data)
-
-        return ds_era5_sortby
+        ds_era5["xco2"] = co2_selected
+        return ds_era5
 
     def add_wtd_column(self, ds_era5: xr.Dataset, ds_wtd: xr.Dataset) -> xr.Dataset:
         """Add WTD column aligned to the ERA5 grid and monthly time axis."""
@@ -79,63 +71,19 @@ class DatasetManager:
         ds_era5 = self._add_year_month(ds_era5, "valid_time")
         
         ds_wtd_monthly = ds_wtd_renamed.groupby("year_month").mean(dim="valid_time")
-        ds_wtd_sortby = ds_wtd_monthly.sortby(["latitude", "longitude"], ascending=[False, False])
-
-        """print(ds_era5.isel(valid_time=slice(0, 5)).to_dataframe())"""
-
-        ds_wtd_coord_adjusted = self._assign_closest_lat_lon(ds_wtd_sortby, ds_era5, "lat", "lon")
-
-        # Reconstructing the good index
-        ds_wtd_coord_adjusted = ds_wtd_coord_adjusted.set_index({
-            "year_month": "year_month",
-            "latitude": "lat",
-            "longitude": "lon",
-        })
-
-        """print(ds_wtd_coord_reajusted.to_dataframe())"""
-
-        # Manipulate the index
-        wtd_df = ds_wtd_coord_adjusted.to_dataframe().reset_index()
-
-        # Delete duplicates
-        wtd_df = wtd_df.drop_duplicates(subset=["year_month", "latitude", "longitude"])
-        wtd_ds_clean = wtd_df.set_index(["year_month", "latitude", "longitude"]).to_xarray()
-
-        wtd_selected = wtd_ds_clean["wtd"].sel(
-            year_month=ds_era5["year_month"],
-            latitude=ds_era5["lat"],
-            longitude=ds_era5["lon"]
+        wtd_selected = ds_wtd_monthly["wtd"].sel(year_month=ds_era5["year_month"])
+        wtd_selected = wtd_selected.sel(
+            latitude=ds_era5["latitude"],
+            longitude=ds_era5["longitude"],
+            method="nearest",
         )
 
-        ds_era5["wtd"] = (("valid_time", "latitude", "longitude"), wtd_selected.data)
-
-        """print(ds_era5.isel(valid_time=slice(0, 5)).to_dataframe())"""
-        """print(np.isnan(ds_era5["xco2"].values).all())"""
-        """print(np.isnan(ds_era5["wtd"].values).all())"""
-
-        return ds_era5.drop(["year_month", "lat", "lon"])
+        ds_era5["wtd"] = wtd_selected
+        return ds_era5.drop_vars(["year_month"], errors="ignore")
 
     def _add_year_month(self, ds: xr.Dataset, time_coord: str) -> xr.Dataset:
         """Add year_month coordinate as datetime64[M] (truncated to month)."""
-        year_month_periods = pd.to_datetime(ds[time_coord].values).to_period("M")
-        ds["year_month"] = (time_coord, year_month_periods)
-        return ds
-
-    def _assign_closest_lat_lon(
-            self, 
-            ds_projected_on: xr.Dataset, 
-            ds_projecting: xr.Dataset,
-            lat_name: str,
-            lon_name: str
-    ) -> xr.Dataset:
-        """Assign closest lat/lon coordinates from a reference dataset."""
-        ref_lats = np.unique(ds_projecting[lat_name].values)
-        ref_lons = np.unique(ds_projecting[lon_name].values)
-        
-        return ds_projected_on.assign_coords(
-            lat=("latitude", self._match_to_closest(ds_projected_on["latitude"].values, ref_lats)),
-            lon=("longitude", self._match_to_closest(ds_projected_on["longitude"].values, ref_lons)),
-        )
+        return ds.assign_coords(year_month=ds[time_coord].dt.strftime("%Y-%m"))
 
     def load_and_clean_co2_dataset(self) -> xr.Dataset:
         """Load and clean CO2 dataset."""
@@ -191,12 +139,6 @@ class DatasetManager:
             lons = list({lon_max_grid, lon_min_grid})
             corner_points = dataset_copy.sel(latitude=lats, longitude=lons)
 
-            region_df: pd.DataFrame = (
-                corner_points
-                .to_dataframe()
-                .reset_index()
-            )
-
             # Map ERA5 grid coordinates back to the requested region bounds
             coord_mapping = {
                 lat_max_grid: lat_max,
@@ -205,21 +147,18 @@ class DatasetManager:
                 lon_min_grid: lon_min
             }
 
-            region_df["latitude"] = region_df["latitude"].map(
-                lambda x: coord_mapping.get(x, x)
-            )
-            region_df["longitude"] = region_df["longitude"].map(
-                lambda x: coord_mapping.get(x, x)
-            )
+            remapped_lats = np.array([
+                coord_mapping.get(float(v), float(v)) for v in corner_points["latitude"].values
+            ])
+            remapped_lons = np.array([
+                coord_mapping.get(float(v), float(v)) for v in corner_points["longitude"].values
+            ])
 
-            region_df["region_id"] = region_id
-            region_df = (
-                region_df
-                .set_index(["region_id", "latitude", "longitude", "valid_time"])
-                .sort_index()
+            region_ds = corner_points.assign_coords(
+                latitude=("latitude", remapped_lats),
+                longitude=("longitude", remapped_lons),
             )
-
-            region_ds = region_df.to_xarray()
+            region_ds = region_ds.expand_dims(region_id=[region_id])
             region_datasets.append(region_ds)
 
         return region_datasets
@@ -232,11 +171,6 @@ class DatasetManager:
             if filtered.size > 0:
                 candidate_points = filtered
         return candidate_points[np.argmin(np.abs(candidate_points - target))]
-
-    def _match_to_closest(self, values, reference_points):
-        """Match values to closest reference points."""
-        reference_points = np.asarray(reference_points)
-        return np.array([reference_points[np.abs(reference_points - v).argmin()] for v in values])
 
     def apply_column_rename(self, ds: xr.Dataset) -> xr.Dataset:
         """Apply column renaming to dataset."""
@@ -271,7 +205,7 @@ class DatasetManager:
         renamed_df.columns = pd.MultiIndex.from_tuples(column_tuples, names=["variable", "source"])
         return renamed_df.sort_index(axis=1, level="variable")
 
-    def write_chunks(self, region_datasets: list[xr.Dataset], predictors: list[str], index_columns: list) -> list[str]:
+    def write_chunks(self, region_datasets: list[xr.Dataset], predictors: list[str]) -> list[str]:
         """
         Write dataset in chunks.
         """
@@ -286,15 +220,15 @@ class DatasetManager:
             region_id = f"region_{dataset.coords['region_id'].values[0]}"
             tmp_dir = os.path.join(tmp_root, region_id)
             os.makedirs(tmp_dir, exist_ok=True)
-
-            region_df = dataset.to_dataframe().reset_index().set_index(index_columns)
-            predictor_lookup = {
-                predictor: data_processor.convert_ameriflux_to_era5(region_df, predictor)
-                for predictor in predictors
-            }
+            predictor_lookup: dict[str, xr.DataArray] = {}
+            for predictor in predictors:
+                predictor_da = data_processor.convert_dataset_to_era5(dataset, predictor)
+                predictor_lookup[predictor] = predictor_da.astype(np.float32)
 
             output_path = os.path.join(tmp_dir, f"{region_id}.nc")
-            chunk_ds = pd.DataFrame(predictor_lookup, index=region_df.index).to_xarray()
+            chunk_ds = xr.Dataset(predictor_lookup)
+            if "valid_time" in chunk_ds.dims:
+                chunk_ds = chunk_ds.chunk({"valid_time": min(744, chunk_ds.sizes["valid_time"])})
             chunk_ds.to_netcdf(output_path, mode="w", format="NETCDF4", engine="h5netcdf")
 
             tmp_directories.append(tmp_dir)
@@ -311,8 +245,8 @@ class DatasetManager:
                 print(f"No chunks found in {tmp_dir}, skipping.")
                 continue
 
-            datasets = [xr.open_dataset(path, engine="h5netcdf") for path in file_paths]
-            combined_ds = xr.combine_by_coords(datasets, combine_attrs="override").load()
+            datasets = [xr.open_dataset(path, engine="h5netcdf", chunks="auto") for path in file_paths]
+            combined_ds = xr.combine_by_coords(datasets, combine_attrs="override")
 
             region_id = os.path.basename(tmp_dir)
             region_datasets[region_id] = combined_ds

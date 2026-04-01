@@ -3,6 +3,7 @@ from datetime import datetime
 import re
 import numpy as np
 import pandas as pd
+import xarray as xr
 
 from .constants import VARIABLES_FOR_PREDICTOR
 from .processing_utils import PROCESSORS
@@ -45,6 +46,17 @@ class DataProcessor:
         if processor_fn is None:
             return values[:, 0]
         return processor_fn(*[values[:, i] for i in range(values.shape[1])])
+
+    @staticmethod
+    def convert_dataset_to_era5(dataset: xr.Dataset, predictor: str) -> xr.DataArray:
+        """Compute predictor values directly from an xarray dataset."""
+        required_columns = VARIABLES_FOR_PREDICTOR[predictor]
+        processor_fn = PROCESSORS.get(predictor)
+        values = [dataset[col] for col in required_columns]
+
+        if processor_fn is None:
+            return values[0]
+        return processor_fn(*values)
         
     
     def load_and_filter_ameriflux_csv(self, path: str, start: str, end: str) -> pd.DataFrame:
