@@ -16,3 +16,4 @@ class CarbonPipelineConfig:
     WTD_URL = "https://geo.public.data.uu.nl/vault-globgm/research-globgm%5B1669042611%5D/original/output/version_1.0/transient_1958-2015/"
     WTD_RES = 30/3600  # arcsec to degree
     ERA5_RES = 0.25  # degree
+    AREA_DAILY_GROUPING_GRID_STEPS_THRESHOLD = 400  # in ERA5 grid steps

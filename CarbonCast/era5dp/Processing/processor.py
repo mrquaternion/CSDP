@@ -130,7 +130,12 @@ class DataProcessor:
         return [group for group, _ in df.groupby(["year", "month", "day", "time"])]
 
     @staticmethod
-    def build_request_groups(start: pd.Timestamp, end: pd.Timestamp, monthly: bool) -> list[tuple]:
+    def build_request_groups(
+        start: pd.Timestamp,
+        end: pd.Timestamp,
+        monthly: bool,
+        force_daily_groups: bool = False
+    ) -> list[tuple]:
         """
         Generate groups dynamically for ERA5 requests.
         - If monthly=False → hourly/daily ERA5:
@@ -143,6 +148,8 @@ class DataProcessor:
             - Full months if possible
             - Otherwise: fallback to days
             Returns (year:str, months:list[str], days:list[str], hours:list[str])
+        - If force_daily_groups=True and monthly=False:
+            - Disable full-month grouping and chunk by day/hour only.
         """
         start = pd.to_datetime(start)
         end = pd.to_datetime(end)
@@ -180,7 +187,11 @@ class DataProcessor:
                     continue
 
                 # Case 1: full month
-                if m_start.floor("h") == month_start and m_end.floor("h") >= month_end.floor("h"):
+                if (
+                    not force_daily_groups
+                    and m_start.floor("h") == month_start
+                    and m_end.floor("h") >= month_end.floor("h")
+                ):
                     from calendar import monthrange
                     n_days = monthrange(month.year, month.month)[1]
                     days = [f"{d:02d}" for d in range(1, n_days + 1)]

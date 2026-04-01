@@ -135,20 +135,6 @@ class CommandExecutor:
 
         return coords_file
 
-    @property
-    def number_requests_per_region(self):
-        """
-        Compute number of CDS requests per region dynamically.
-        Uses grouping logic instead of raw hour-difference.
-        """
-        start = self._parse_datetime(self.start)
-        end = self._parse_datetime(self.end)
-
-        # Ask processor to build request groups
-        groups = self.pipeline.processor.build_request_groups(start, end, self.aggregation_type == "MONTHLY")
-
-        return len(groups)
-
     # Only callable function
     async def run(self):
         """Dispatch to download or process based on config action."""

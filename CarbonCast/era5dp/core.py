@@ -120,8 +120,40 @@ class CarbonPipeline:
         if pd.isna(start_adj) or pd.isna(end_adj):
             raise ValueError(f"Invalid dates: start={start}, end={end}")
 
-        groups = self.processor.build_request_groups(start_adj, end_adj, aggregation_type == "MONTHLY")
-        unzip_dirs = await self.downloader.download_request_groups_async(groups, era5_vars, download_bbox, aggregation_type == "MONTHLY", region_id)
+        use_monthly_requests = aggregation_type == "MONTHLY"
+        force_daily_groups = False
+
+        if geometry_mode == "Area" and len(download_bbox) == 4:
+            north, west, south, east = download_bbox
+            lat_span = abs(north - south)
+            lon_span = abs(east - west)
+
+            lat_grid_steps = lat_span / self.config.ERA5_RES
+            lon_grid_steps = lon_span / self.config.ERA5_RES
+            max_grid_steps = max(lat_grid_steps, lon_grid_steps)
+
+            if max_grid_steps > self.config.AREA_DAILY_GROUPING_GRID_STEPS_THRESHOLD:
+                force_daily_groups = True
+                use_monthly_requests = False
+                print(
+                    "Area mode: forcing daily request groups because bbox grid span "
+                    f"({max_grid_steps:.1f}) exceeds threshold "
+                    f"({self.config.AREA_DAILY_GROUPING_GRID_STEPS_THRESHOLD})."
+                )
+
+        groups = self.processor.build_request_groups(
+            start_adj,
+            end_adj,
+            use_monthly_requests,
+            force_daily_groups=force_daily_groups
+        )
+        unzip_dirs = await self.downloader.download_request_groups_async(
+            groups,
+            era5_vars,
+            download_bbox,
+            use_monthly_requests,
+            region_id
+        )
 
         feature_entry = {
             "region_id": region_id,
