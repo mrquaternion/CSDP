@@ -1,5 +1,8 @@
 # process_config.yaml
 action: process
-output-filename:    # prefix of the output files
-manifest:           # path of the JSON manifests
+output-filename:                  # prefix of the output files
+manifest:                         # path of the JSON manifests
 delete-source-after-aggregation:  # true/false | optional, skips interactive prompt when aggregating
+time-window-to-process:           # optional, process all the downloaded data
+  start-date: 
+  end-date:

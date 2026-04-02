@@ -4,6 +4,7 @@ import asyncio
 import calendar
 import json
 import os
+import re
 import pandas as pd
 from datetime import datetime
 from enum import Enum
@@ -69,6 +70,146 @@ class ProcessingType(Enum):
     SITE = "Site"
 
 
+def parse_config_datetime(value) -> datetime:
+    """Parse config datetimes from the CLI/manifest format."""
+    if isinstance(value, str):
+        return datetime.strptime(value, "%Y-%m-%d %H:%M:%S")
+    if isinstance(value, datetime):
+        return value
+    raise TypeError(f"Unsupported type for datetime parsing: {type(value)}")
+
+
+def effective_processing_window(
+    feature_start: str,
+    feature_end: str,
+    requested_window: dict | None,
+) -> tuple[str, str] | None:
+    """Clamp a feature's manifest window to the optional processing override."""
+    feature_start_dt = parse_config_datetime(feature_start)
+    feature_end_dt = parse_config_datetime(feature_end)
+
+    if not requested_window:
+        return (
+            feature_start_dt.strftime("%Y-%m-%d %H:%M:%S"),
+            feature_end_dt.strftime("%Y-%m-%d %H:%M:%S"),
+        )
+
+    window_start = parse_config_datetime(requested_window["start-date"])
+    window_end = parse_config_datetime(requested_window["end-date"])
+    effective_start = max(feature_start_dt, window_start)
+    effective_end = min(feature_end_dt, window_end)
+
+    if effective_end < effective_start:
+        return None
+
+    return (
+        effective_start.strftime("%Y-%m-%d %H:%M:%S"),
+        effective_end.strftime("%Y-%m-%d %H:%M:%S"),
+    )
+
+
+def parse_unzip_dir_time_window(unzip_dir: str) -> tuple[datetime, datetime] | None:
+    """Infer the time coverage of an ERA5 unzip directory from its basename."""
+    name = Path(unzip_dir).name
+
+    patterns: list[tuple[str, callable]] = [
+        (
+            r"^ERA5_(\d{4})_full-year$",
+            lambda m: (
+                datetime(int(m.group(1)), 1, 1, 0, 0, 0),
+                datetime(int(m.group(1)), 12, 31, 23, 0, 0),
+            ),
+        ),
+        (
+            r"^ERA5_(\d{4})to(\d{4})_full-years$",
+            lambda m: (
+                datetime(int(m.group(1)), 1, 1, 0, 0, 0),
+                datetime(int(m.group(2)), 12, 31, 23, 0, 0),
+            ),
+        ),
+        (
+            r"^ERA5_(\d{4})-(\d{2})_full-month$",
+            lambda m: (
+                datetime(int(m.group(1)), int(m.group(2)), 1, 0, 0, 0),
+                datetime(
+                    int(m.group(1)),
+                    int(m.group(2)),
+                    calendar.monthrange(int(m.group(1)), int(m.group(2)))[1],
+                    23,
+                    0,
+                    0,
+                ),
+            ),
+        ),
+        (
+            r"^ERA5_(\d{4})-(\d{2})-(\d{2})_full-day$",
+            lambda m: (
+                datetime(int(m.group(1)), int(m.group(2)), int(m.group(3)), 0, 0, 0),
+                datetime(int(m.group(1)), int(m.group(2)), int(m.group(3)), 23, 0, 0),
+            ),
+        ),
+        (
+            r"^ERA5_(\d{4})-(\d{2})_days(\d{2})to(\d{2})$",
+            lambda m: (
+                datetime(int(m.group(1)), int(m.group(2)), int(m.group(3)), 0, 0, 0),
+                datetime(int(m.group(1)), int(m.group(2)), int(m.group(4)), 23, 0, 0),
+            ),
+        ),
+        (
+            r"^ERA5_(\d{4})-(\d{2})-(\d{2})T(\d{2}:\d{2})to(\d{2}:\d{2})$",
+            lambda m: (
+                datetime.strptime(
+                    f"{m.group(1)}-{m.group(2)}-{m.group(3)} {m.group(4)}:00",
+                    "%Y-%m-%d %H:%M:%S",
+                ),
+                datetime.strptime(
+                    f"{m.group(1)}-{m.group(2)}-{m.group(3)} {m.group(5)}:00",
+                    "%Y-%m-%d %H:%M:%S",
+                ),
+            ),
+        ),
+        (
+            r"^ERA5_(\d{4})-(\d{2})-(\d{2})T(\d{2}:\d{2})$",
+            lambda m: (
+                datetime.strptime(
+                    f"{m.group(1)}-{m.group(2)}-{m.group(3)} {m.group(4)}:00",
+                    "%Y-%m-%d %H:%M:%S",
+                ),
+                datetime.strptime(
+                    f"{m.group(1)}-{m.group(2)}-{m.group(3)} {m.group(4)}:00",
+                    "%Y-%m-%d %H:%M:%S",
+                ),
+            ),
+        ),
+    ]
+
+    for pattern, builder in patterns:
+        match = re.match(pattern, name)
+        if match:
+            return builder(match)
+
+    return None
+
+
+def filter_unzip_dirs_by_time_window(unzip_dirs: list[str], start: str, end: str) -> list[str]:
+    """Keep only unzip directories whose encoded time range overlaps the requested window."""
+    start_dt = parse_config_datetime(start)
+    end_dt = parse_config_datetime(end)
+    filtered_dirs: list[str] = []
+
+    for unzip_dir in unzip_dirs:
+        chunk_window = parse_unzip_dir_time_window(unzip_dir)
+        if chunk_window is None:
+            filtered_dirs.append(unzip_dir)
+            continue
+
+        chunk_start, chunk_end = chunk_window
+        if chunk_end >= start_dt and chunk_start <= end_dt:
+            filtered_dirs.append(unzip_dir)
+
+    return filtered_dirs
+
+
 class CommandExecutor:
     """Orchestrates download/process stages based on the YAML config."""
     def __init__(self, config_dict: dict):
@@ -96,6 +237,7 @@ class CommandExecutor:
             config_dict.get("delete-source-after-aggregation")
         )
         self.id_field = config_dict.get("id-field")
+        self.time_window_to_process = config_dict.get("time-window-to-process")
 
         self.all_geometries: dict[str | int, Geometry] = {}
         self.bounding_boxes_geometry: dict[Geometry, dict[str | int, list[float]]] = {}
@@ -251,7 +393,26 @@ class CommandExecutor:
             geometry = features[i].get("geometry")
             rect_regions = features[i].get("rect_regions")
             unzip_dirs = features[i].get("unzip_sub_folders")
+            effective_window = effective_processing_window(start, end, self.time_window_to_process)
+            if effective_window is None:
+                print(f"Skipping feature {region_id}: no overlap with requested processing window.")
+                continue
+
+            start, end = effective_window
+            unzip_dirs = filter_unzip_dirs_by_time_window(unzip_dirs, start, end)
+            if not unzip_dirs:
+                print(f"Skipping feature {region_id}: no downloaded ERA5 chunks overlap {start} -> {end}.")
+                continue
+
             ds = self.pipeline.dataset_manager.merge_unzipped_netcdfs(unzip_dirs)
+            if ds is None:
+                print(f"Skipping feature {region_id}: no NetCDF files found in selected unzip directories.")
+                continue
+
+            ds = ds.sel(valid_time=slice(start, end))
+            if ds.sizes.get("valid_time", 0) == 0:
+                print(f"Skipping feature {region_id}: merged dataset has no timestamps in {start} -> {end}.")
+                continue
 
             if not self.output_suffix:
                 self.output_suffix = "output"
@@ -390,12 +551,7 @@ class CommandExecutor:
     @staticmethod
     def _parse_datetime(value):
         """Parse datetime from config into a datetime object."""
-        if isinstance(value, str):
-            return datetime.strptime(value, "%Y-%m-%d %H:%M:%S")
-        elif isinstance(value, datetime):
-            return value
-        else:
-            raise TypeError(f"Unsupported type for datetime parsing: {type(value)}")
+        return parse_config_datetime(value)
 
     def _validate_date_range(self):
         """Validate that start/end are ordered and match aggregation rules."""
