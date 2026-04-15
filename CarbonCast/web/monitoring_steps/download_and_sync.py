@@ -21,8 +21,9 @@ REMOTE_DIR = 'scratch/CarbonCast/carboncast/datasets/unzip'
 CONFIG_FILENAME = 'config.yml'
 SSH_CONTROL_PATH = '/tmp/csdp-ssh-%C'
 MANIFESTS_PATH = PROJECT_ROOT / 'manifests'
-RSYNC_SLEEP_TIME = 30
+RSYNC_SLEEP_TIME = 5
 DOWNLOAD_REGISTRY_PATH = MANIFESTS_PATH / "cluster_download_registry.json"
+ERA5_TRANSFER_READY_SENTINEL = ".transfer_ready"
 
 
 def format_yml_data(data: Any | None):
@@ -203,6 +204,21 @@ def sync(
 ):
     LOCAL_UNZIP_DIR.mkdir(parents=True, exist_ok=True)
 
+    output = ""
+    era5_synced = _sync_one_ready_era5_chunk(
+        credential=credential,
+        on_output=on_output,
+        use_ssh_multiplex=use_ssh_multiplex,
+    )
+
+    if finalize_wtd_cleanup:
+        while _sync_one_ready_era5_chunk(
+            credential=credential,
+            on_output=on_output,
+            use_ssh_multiplex=use_ssh_multiplex,
+        ):
+            pass
+
     commands = get_sync_cmds(
         credential,
         use_ssh_multiplex=use_ssh_multiplex,
@@ -210,29 +226,47 @@ def sync(
         skip_wtd_sync=skip_wtd_sync,
     )
 
-    output = ""
-    used_rsync = False
     for cmd in commands:
         output = run(cmd, on_output=on_output, output_stream='sync')
-        used_rsync = used_rsync or (cmd and cmd[0] == "rsync")
-
-    if used_rsync:
-        _remove_empty_dirs(LOCAL_UNZIP_DIR)
 
     if finalize_wtd_cleanup:
         _run_remote_co2_nccopy(credential=credential, on_output=on_output)
 
-    emit_output(on_output, 'Transfer done!\n', 'sync')
+    if era5_synced or commands:
+        emit_output(on_output, 'Transfer done!\n', 'sync')
     return output
 
 
-def _remove_empty_dirs(root: Path):
-    for dirpath, _, _ in os.walk(root, topdown=False):
-        path = Path(dirpath)
-        try:
-            path.rmdir()
-        except OSError:
-            continue
+def _sync_one_ready_era5_chunk(
+    credential: str,
+    on_output=None,
+    use_ssh_multiplex: bool = False,
+) -> bool:
+    chunk_dir = _first_ready_era5_chunk_dir()
+    if chunk_dir is None:
+        return False
+
+    run(
+        _build_era5_chunk_rsync_cmd(
+            credential=credential,
+            chunk_dir=chunk_dir,
+            use_ssh_multiplex=use_ssh_multiplex,
+        ),
+        on_output=on_output,
+        output_stream="sync",
+    )
+    return True
+
+
+def _first_ready_era5_chunk_dir() -> Path | None:
+    era5_root = LOCAL_UNZIP_DIR / "ERA5"
+    if not era5_root.exists():
+        return None
+
+    for sentinel_path in sorted(era5_root.rglob(ERA5_TRANSFER_READY_SENTINEL)):
+        if sentinel_path.parent.is_dir():
+            return sentinel_path.parent
+    return None
 
 
 def _run_remote_co2_nccopy(credential: str, on_output=None):
@@ -263,7 +297,15 @@ def _build_rsync_cmd(
     remove_source_files: bool,
     filter_args: list[str] | None = None,
 ) -> list[str]:
-    cmd = ["rsync", "-avh", "--info=progress2", "--prune-empty-dirs"]
+    cmd = [
+        "rsync",
+        "-avh",
+        "--whole-file",
+        "--info=progress2",
+        "--prune-empty-dirs",
+        "--exclude=.DS_Store",
+        "--exclude=._*",
+    ]
     if remove_source_files:
         cmd.append("--remove-source-files")
     if filter_args:
@@ -275,6 +317,27 @@ def _build_rsync_cmd(
 
     if use_ssh_multiplex:
         cmd[1:1] = ["-e", get_rsync_ssh_command()]
+    return cmd
+
+
+def _build_era5_chunk_rsync_cmd(
+    credential: str,
+    chunk_dir: Path,
+    use_ssh_multiplex: bool,
+) -> list[str]:
+    relative_chunk_dir = chunk_dir.relative_to(LOCAL_UNZIP_DIR)
+    source = f"{LOCAL_UNZIP_DIR}/./{relative_chunk_dir.as_posix()}/"
+
+    cmd = _build_rsync_cmd(
+        credential=credential,
+        use_ssh_multiplex=use_ssh_multiplex,
+        remove_source_files=True,
+        filter_args=["--relative"],
+    )
+    cmd[-2:] = [
+        source,
+        f"{credential}:~/{REMOTE_DIR}/",
+    ]
     return cmd
 
 
@@ -290,12 +353,12 @@ def get_sync_cmds(
 
     if rsync:
         commands = [
-            # ERA5/CO2 (and anything outside WTD): move continuously.
+            # Non-ERA5, non-WTD data (e.g. CO2): move continuously.
             _build_rsync_cmd(
                 credential=credential,
                 use_ssh_multiplex=use_ssh_multiplex,
                 remove_source_files=True,
-                filter_args=["--exclude=WTD/***"],
+                filter_args=["--exclude=WTD/***", "--exclude=ERA5/***"],
             ),
         ]
         if not skip_wtd_sync:

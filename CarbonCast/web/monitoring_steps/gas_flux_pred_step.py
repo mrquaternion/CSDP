@@ -34,6 +34,7 @@ def gas_flux_pred_job_script(
             pip install -e . --no-cache-dir --no-index
             pip install scipy --no-index
             pip install h5py h5netcdf --no-index
+            pip install timezonefinder --no-index
 
             printf "\\nExecuting the inference script."
             cd eval/

@@ -27,6 +27,10 @@ from .monitoring_steps.postprocessing_step import (
 # ================== Monitoring Config ==================
 monitoring_bp = Blueprint("monitoring", __name__, url_prefix="/remote-monitoring")
 OUTPUTS_READY_URL = "/remote-monitoring/outputs-ready"
+DISPLAY_LOG_MAX_LINES = 150
+DISPLAY_LOG_TRUNCATION_NOTICE = (
+    f"[Older output truncated; showing most recent {DISPLAY_LOG_MAX_LINES} lines]\n"
+)
 
 
 def _empty_step_state():
@@ -36,6 +40,19 @@ def _empty_step_state():
         "remote_output": "",
         "error": "",
     }
+
+
+def _truncate_output_for_display(text: str, max_lines: int = DISPLAY_LOG_MAX_LINES) -> str:
+    if not text:
+        return ""
+
+    text = text.replace(DISPLAY_LOG_TRUNCATION_NOTICE, "")
+    lines = text.splitlines(keepends=True)
+    if len(lines) <= max_lines:
+        return text
+
+    truncated = "".join(lines[-max_lines:])
+    return DISPLAY_LOG_TRUNCATION_NOTICE + truncated
 
 
 STEPS = {
@@ -74,16 +91,18 @@ def _broadcast_event(event):
 
 
 def _serialize_state_locked():
-    download_output = (
+    raw_download_output = (
         STEPS["download"]["local_output"]
         + STEPS["post_processing"]["local_output"]
         + STEPS["gas_flux"]["local_output"]
     )
-    sync_output = (
+    raw_sync_output = (
         STEPS["download"]["remote_output"]
         + STEPS["post_processing"]["remote_output"]
         + STEPS["gas_flux"]["remote_output"]
     )
+    download_output = _truncate_output_for_display(raw_download_output)
+    sync_output = _truncate_output_for_display(raw_sync_output)
     error = (
         WORKFLOW_STATE["error"]
         or STEPS["download"]["error"]

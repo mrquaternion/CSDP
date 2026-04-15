@@ -263,7 +263,7 @@ class CommandExecutor:
     @staticmethod
     def validate_geometries_dir(coords_file: str | None) -> str | None:
         """
-        Validate that coords_file is a directory if provided.
+        Validate that coords_file is a GeoJSON directory or file if provided.
         Returns the same path if valid, or None if no path given.
         """
         if coords_file is None:
@@ -272,10 +272,44 @@ class CommandExecutor:
         path = Path(coords_file)
         if not os.path.exists(path):
             raise FileNotFoundError(f"coords_file path does not exist: {coords_file}")
-        if not os.path.isdir(path):
-            raise NotADirectoryError(f"coords_file is not a directory: {coords_file}")
+        if path.is_dir():
+            return coords_file
+        if path.is_file() and path.suffix in {".geojson", ".json"}:
+            return coords_file
+        if path.is_file():
+            raise ValueError(
+                "coords_file must point to a GeoJSON file with a .geojson or .json extension: "
+                f"{coords_file}"
+            )
+        raise ValueError(f"coords_file must be a directory or GeoJSON file: {coords_file}")
 
-        return coords_file
+    def _load_geometries_from_geojson(
+        self,
+        file_path: Path,
+        geometries_per_file: dict[str | int, Geometry],
+        missing_counter: int,
+    ) -> int:
+        """Load all features from a single GeoJSON file into the geometry mapping."""
+        with open(file_path, "r") as f:
+            json_dict = json.load(f)
+
+        if not json_dict.get("features"):
+            raise ValueError(f"No features found in GeoJSON file: {file_path}")
+
+        for feature in json_dict["features"]:
+            props = feature.get("properties", {})
+            if self.id_field in props:
+                id_geo = props[self.id_field]
+            else:
+                id_geo = missing_counter
+                missing_counter += 1
+
+            coordinates = feature["geometry"]["coordinates"]
+            geometry = Geometry(data=coordinates)
+            geometry.validate_coordinates()
+            geometries_per_file[id_geo] = geometry
+
+        return missing_counter
 
     # Only callable function
     async def run(self):
@@ -625,38 +659,32 @@ class CommandExecutor:
         Parse the coordinate input provided by the user.
         """
         path = Path(self.geometries_dir)
-
-        # If the provided path is a directory
         geometries_per_file: dict[str | int, Geometry] = {}
+        missing_counter = 1
+
         if path.is_dir():
-            missing_counter = 1
             for file_path in sorted(path.iterdir()):
-                # Only consider files with recognised extensions
                 if file_path.suffix not in (".geojson", ".json"):
                     continue
-                with open(file_path, "r") as f:
-                    json_dict = json.load(f)
-                    if not json_dict.get("features"):
-                        raise ValueError(f"No features found in GeoJSON file: {file_path}")
-                    features = json_dict["features"]
-
-                    for feature in features:
-                        # Assigning an ID to the region
-                        props = feature.get("properties", {})
-                        if self.id_field in props:
-                            id_geo = props[self.id_field]
-                        else:
-                            id_geo = missing_counter
-                            missing_counter += 1
-
-                        coordinates = feature["geometry"]["coordinates"]
-                        geometry = Geometry(data=coordinates)
-                        geometry.validate_coordinates()
-                        geometries_per_file[id_geo] = geometry
+                missing_counter = self._load_geometries_from_geojson(
+                    file_path=file_path,
+                    geometries_per_file=geometries_per_file,
+                    missing_counter=missing_counter,
+                )
 
             if not geometries_per_file:
                 raise ValueError(f"No valid GeoJSON files found in directory: {path}")
-        return geometries_per_file
+            return geometries_per_file
+
+        if path.is_file():
+            self._load_geometries_from_geojson(
+                file_path=path,
+                geometries_per_file=geometries_per_file,
+                missing_counter=missing_counter,
+            )
+            return geometries_per_file
+
+        raise ValueError(f"GeoJSON input path must be a directory or file: {path}")
 
     def compute_covering_bbox(self, geometries: list[Geometry]) -> list[float]:
         """Build a single bounding box covering all given geometries."""

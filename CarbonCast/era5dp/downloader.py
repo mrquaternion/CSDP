@@ -1,9 +1,11 @@
 """Download utilities for ERA5, CO2, and WTD datasets."""
 import asyncio
+from collections import deque
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
 import os
 from pathlib import Path
+import time
 import zipfile
 import pandas as pd
 import requests
@@ -12,6 +14,8 @@ from tqdm import tqdm
 from .api_request import APIRequest
 from .config import CarbonPipelineConfig
 from .download_registry import DownloadRegistry
+
+ERA5_TRANSFER_READY_SENTINEL = ".transfer_ready"
 
 
 class DataDownloaderError(Exception):
@@ -26,6 +30,9 @@ class DataDownloaderError(Exception):
 
 class DataDownloader:
     """Handles downloading operations for various data sources."""
+
+    ERA5_READY_RESULT_POOL_SIZE = 4
+    ERA5_TRANSFER_POLL_SECONDS = 5
     
     def __init__(self, config: CarbonPipelineConfig):
         self.config = config
@@ -143,9 +150,11 @@ class DataDownloader:
         monthly: bool,
         region_id: str = None
     ) -> list[str]:
-        """Download data for multiple request groups."""
+        """Request ERA5 results continuously, but download/extract one chunk at a time."""
         unzip_dirs = []
-        for group in tqdm(groups, desc="Downloading hourly data", unit="group", colour="green"):
+        pending_results: deque[tuple[APIRequest, object, str]] = deque()
+
+        for group in tqdm(groups, desc="Requesting ERA5 data", unit="group", colour="green"):
             request = self._build_group_request(group, coords, era5_vars, monthly)
             zip_name = request.expected_filename()
             zip_fp = os.path.join(self.config.ZIP_DIR, zip_name)
@@ -167,15 +176,22 @@ class DataDownloader:
                 continue
 
             if os.path.exists(zip_fp):
-                self._extract_zip(zip_fp, unzip_fp)
-                self.download_registry.mark_available(unzip_fp, kind="nc")
+                if self._extract_zip(zip_fp, unzip_fp):
+                    self.download_registry.mark_available(unzip_fp, kind="nc")
+                    self._mark_era5_chunk_ready(unzip_fp)
                 continue
 
-            downloaded_zip_name = request.query(self.config.ZIP_DIR)
-            if downloaded_zip_name:
-                downloaded_zip_fp = os.path.join(self.config.ZIP_DIR, downloaded_zip_name)
-                self._extract_zip(downloaded_zip_fp, unzip_fp)
-                self.download_registry.mark_available(unzip_fp, kind="nc")
+            if len(pending_results) >= self.ERA5_READY_RESULT_POOL_SIZE:
+                self._download_next_ready_result(pending_results)
+
+            result = request.retrieve_result()
+            pending_results.append((request, result, unzip_fp))
+
+            if self._era5_transfer_slot_available():
+                self._download_next_ready_result(pending_results, wait_for_transfer_slot=False)
+
+        while pending_results:
+            self._download_next_ready_result(pending_results)
         return unzip_dirs
 
     @staticmethod
@@ -202,17 +218,59 @@ class DataDownloader:
         )
 
     @staticmethod
-    def _extract_zip(zip_fp: str, unzip_fp: str) -> None:
+    def _extract_zip(zip_fp: str, unzip_fp: str) -> bool:
         """
         Extracts all files from a ZIP archive to a specified directory.
         """
         if not os.path.exists(zip_fp):
             print(f"Warning: ZIP file not found {zip_fp}, skipping extraction.")
-            return
+            return False
         os.makedirs(unzip_fp, exist_ok=True)
         with zipfile.ZipFile(zip_fp, "r") as zp:
             try: 
                 zp.extractall(unzip_fp)
                 os.remove(zip_fp)
+                return True
             except zipfile.error as e: 
                 print(f"Failed to extract {zip_fp}: {e}")
+                return False
+
+    def _download_next_ready_result(
+        self,
+        pending_results: deque[tuple[APIRequest, object, str]],
+        wait_for_transfer_slot: bool = True,
+    ) -> None:
+        """Download/extract the next ready ERA5 result once the transfer slot is free."""
+        if not pending_results:
+            return
+
+        if wait_for_transfer_slot:
+            self._wait_for_era5_transfer_slot()
+        elif not self._era5_transfer_slot_available():
+            return
+
+        request, result, unzip_fp = pending_results.popleft()
+        downloaded_zip_name = request.download_result(result, self.config.ZIP_DIR)
+        downloaded_zip_fp = os.path.join(self.config.ZIP_DIR, downloaded_zip_name)
+        if self._extract_zip(downloaded_zip_fp, unzip_fp):
+            self.download_registry.mark_available(unzip_fp, kind="nc")
+            self._mark_era5_chunk_ready(unzip_fp)
+
+    def _wait_for_era5_transfer_slot(self) -> None:
+        """Block until there is no ready ERA5 chunk waiting to be synced away."""
+        while not self._era5_transfer_slot_available():
+            print("Waiting for ERA5 sync to finish before downloading the next result...")
+            time.sleep(self.ERA5_TRANSFER_POLL_SECONDS)
+
+    def _era5_transfer_slot_available(self) -> bool:
+        """Only allow one locally materialized ERA5 chunk awaiting sync at a time."""
+        era5_root = Path(self.config.ERA5_DIR)
+        if not era5_root.exists():
+            return True
+        return not any(era5_root.rglob(ERA5_TRANSFER_READY_SENTINEL))
+
+    @staticmethod
+    def _mark_era5_chunk_ready(unzip_fp: str) -> None:
+        """Signal that an ERA5 chunk is fully extracted and ready to sync."""
+        os.makedirs(unzip_fp, exist_ok=True)
+        Path(unzip_fp, ERA5_TRANSFER_READY_SENTINEL).touch()

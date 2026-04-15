@@ -1,5 +1,5 @@
 action: download
-geometries-directory: "examples/geojsons"
+geometries-directory: "examples/geojsons"  # directory or single GeoJSON file
 start-date: "2015-12-01 00:00:00"
 end-date: "2015-12-31 23:00:00"
 ameriflux-predictors: [TA, PA, P, WS, WD, VPD, RH] 

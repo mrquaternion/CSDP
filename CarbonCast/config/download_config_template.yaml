@@ -1,6 +1,6 @@
 # download_config.yaml
 action: download
-geometries-directory:   # directory of JSON files | nothing
+geometries-directory:   # directory of JSON files or single GeoJSON file | nothing
 bbox-coordinates:       # coordinates of the bounding region
 location-coordinates:   # coordinates of the data point
 start-date:             # format: YYYY-MM-DDTHH:MM:SS

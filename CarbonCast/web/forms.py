@@ -73,8 +73,11 @@ class AreaTypePolygonsForm(AreaTypeForm):
     )
 
     def validate_geojsons(self, field):
-        if not os.path.exists(Path(field.data)):
-            raise ValidationError('The relative path to the GeoJSONs folder is invalid.')
+        path = Path(field.data)
+        if not path.exists():
+            raise ValidationError('The relative path to the GeoJSON input is invalid.')
+        if path.is_file() and path.suffix not in {'.geojson', '.json'}:
+            raise ValidationError('A single GeoJSON input must use a .geojson or .json file.')
 
 
 class CredentialsForm(FlaskForm):

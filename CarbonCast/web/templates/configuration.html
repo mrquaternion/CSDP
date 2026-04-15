@@ -128,8 +128,8 @@
                 {% elif area_type == 'polygons' %}
                     <div class="field">
                         {{ template_form.geojsons.label }}
-                        <p class="choice-note">Specify the relative path of the folder containing the GeoJSONs files</p>
-                        {{ template_form.geojsons(type="text", class="input", placeholder="e.g. examples/geojsons") }}
+                        <p class="choice-note">Specify the relative path of a GeoJSON folder or a single GeoJSON file</p>
+                        {{ template_form.geojsons(type="text", class="input", placeholder="e.g. examples/geojsons or geojsons/file.geojson") }}
                         {% if template_form.geojsons.errors %}
                             <p class="field-error is-visible" aria-live="polite">
                                 {{ template_form.geojsons.errors[0] }}

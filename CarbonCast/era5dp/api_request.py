@@ -3,7 +3,6 @@ import os
 import cdsapi
 
 from .config import CarbonPipelineConfig
-from .config import CarbonPipelineConfig
 
 
 
@@ -47,18 +46,34 @@ class APIRequest:
         self.monthly = monthly
 
     def query(self, zip_dir) -> str:
+        result = self.retrieve_result()
+        return self.download_result(result, zip_dir)
+
+    def retrieve_result(self):
+        """Submit an ERA5 request and wait until its result is ready."""
         if self.monthly:
-            return self._query_era5_monthly(zip_dir)
-        else:
-            return self._query_era5_hourly(zip_dir)
+            return self._retrieve_era5_monthly_result()
+        return self._retrieve_era5_hourly_result()
+
+    def download_result(self, result, zip_dir: str) -> str:
+        """Download a completed ERA5 result to its deterministic ZIP filename."""
+        filename = self._filename_logic()
+        os.makedirs(zip_dir, exist_ok=True)
+        target = os.path.join(zip_dir, filename)
+
+        print(f"\nStarting download for {filename} -> {target}")
+        result.download(target)
+        print(f"\nFinished download for {filename}")
+
+        return filename
 
     def expected_filename(self) -> str:
         """Return deterministic ERA5 zip filename for this request."""
         return self._filename_logic()
 
-    def _query_era5_monthly(self, zip_dir) -> str:
+    def _retrieve_era5_monthly_result(self):
         """
-        Constructs and submits a download request to the CDS API for ERA5 single-level reanalysis data.
+        Submit a monthly ERA5 request and wait until the result is ready.
         """
         if len(self.coords) == 2:
             self.area = [self.coords[0], self.coords[1], self.coords[0], self.coords[1]]
@@ -77,21 +92,12 @@ class APIRequest:
             "download_format": "zip"
         }
 
-        client = cdsapi.Client(wait_until_complete=False, delete=False)
-        result = client.retrieve(dataset, request)
+        client = cdsapi.Client(wait_until_complete=True, delete=False)
+        return client.retrieve(dataset, request)
 
-        filename = self._filename_logic()
-        target = os.path.join(zip_dir, filename)
-
-        print(f"\nStarting download for {filename} -> {target}")
-        result.download(target)
-        print(f"\nFinished download for {filename}")
-
-        return filename
-
-    def _query_era5_hourly(self, zip_dir: str) -> str:
+    def _retrieve_era5_hourly_result(self):
         """
-        Constructs and submits a download request to the CDS API for ERA5 single-level reanalysis data.
+        Submit an hourly ERA5 request and wait until the result is ready.
         """
         if len(self.coords) == 2:
             self.area = [self.coords[0], self.coords[1], self.coords[0], self.coords[1]]
@@ -111,17 +117,8 @@ class APIRequest:
             "download_format": "zip"
         }
 
-        client = cdsapi.Client(wait_until_complete=False, delete=False)
-        result = client.retrieve(dataset, request)
-
-        filename = self._filename_logic()
-        target = os.path.join(zip_dir, filename)
-
-        print(f"\nStarting download for {filename} -> {target}")
-        result.download(target)
-        print(f"\nFinished download for {filename}")
-
-        return filename
+        client = cdsapi.Client(wait_until_complete=True, delete=False)
+        return client.retrieve(dataset, request)
 
     @classmethod
     def query_co2(self, zip_dir: str) -> None:
@@ -137,6 +134,7 @@ class APIRequest:
         result = client.retrieve(dataset, request)
 
         filename = f"{CarbonPipelineConfig.CO2_FOLDERNAME}.zip"
+        os.makedirs(zip_dir, exist_ok=True)
         target = os.path.join(zip_dir, filename)
 
         result.download(target)

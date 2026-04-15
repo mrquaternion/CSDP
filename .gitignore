@@ -15,6 +15,7 @@ carboncast/config/*
 carboncast/research/
 carboncast/config/gas_flux_assets/
 visualization/
+audit/
 
 # Python bytecode
 __pycache__/

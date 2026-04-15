@@ -1,4 +1,6 @@
 document.addEventListener("DOMContentLoaded", () => {
+    const MAX_DISPLAY_LINES = 150;
+    const DISPLAY_TRUNCATION_NOTICE = `[Older output truncated; showing most recent ${MAX_DISPLAY_LINES} lines]\n`;
     const downloadEl = document.getElementById('download-output');
     const syncEl = document.getElementById('sync-output');
     const errorEl = document.getElementById('transfer-error');
@@ -24,6 +26,20 @@ document.addEventListener("DOMContentLoaded", () => {
 
     function normalizeOutput(text) {
         return (text || '').replace(/\r/g, '\n');
+    }
+
+    function clampOutputForDisplay(text) {
+        const normalized = normalizeOutput(text).split(DISPLAY_TRUNCATION_NOTICE).join('');
+        if (!normalized) {
+            return '';
+        }
+
+        const lines = normalized.match(/[^\n]*\n|[^\n]+$/g) || [];
+        if (lines.length <= MAX_DISPLAY_LINES) {
+            return normalized;
+        }
+
+        return DISPLAY_TRUNCATION_NOTICE + lines.slice(-MAX_DISPLAY_LINES).join('');
     }
 
     function isNearBottom(el, threshold = 24) {
@@ -52,8 +68,8 @@ document.addEventListener("DOMContentLoaded", () => {
         const shouldAutoScrollDownload = isNearBottom(downloadEl);
         const shouldAutoScrollSync = isNearBottom(syncEl);
 
-        downloadBuffer = normalizeOutput(state.download_output);
-        syncBuffer = normalizeOutput(state.sync_output);
+        downloadBuffer = clampOutputForDisplay(state.download_output);
+        syncBuffer = clampOutputForDisplay(state.sync_output);
         errorBuffer = normalizeOutput(state.error);
         downloadEl.textContent = downloadBuffer || 'No output yet.';
         syncEl.textContent = syncBuffer || 'No output yet.';
@@ -254,7 +270,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
             if (data.type === 'download_output') {
                 const shouldAutoScroll = isNearBottom(downloadEl);
-                downloadBuffer += normalizeOutput(data.text);
+                downloadBuffer = clampOutputForDisplay(downloadBuffer + data.text);
                 downloadEl.textContent = downloadBuffer || 'No output yet.';
                 if (shouldAutoScroll) {
                     scrollToBottom(downloadEl);
@@ -264,7 +280,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
             if (data.type === 'sync_output') {
                 const shouldAutoScroll = isNearBottom(syncEl);
-                syncBuffer += normalizeOutput(data.text);
+                syncBuffer = clampOutputForDisplay(syncBuffer + data.text);
                 syncEl.textContent = syncBuffer || 'No output yet.';
                 if (shouldAutoScroll) {
                     scrollToBottom(syncEl);

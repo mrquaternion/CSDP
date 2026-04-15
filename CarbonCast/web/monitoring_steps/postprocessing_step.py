@@ -640,7 +640,7 @@ manifest_path = None
 for raw_line in process_cfg.read_text(encoding="utf-8").splitlines():
     line = raw_line.strip()
     if line.startswith("manifest:"):
-        manifest_path = line.split(":", 1)[1].strip().strip("'\\\"")
+        manifest_path = line.split(":", 1)[1].strip().strip("'\"")
         break
 
 if not manifest_path:
@@ -688,6 +688,9 @@ PY
         on_output=lambda text, stream="sync": emit_output(text, stream),
         output_stream="sync",
     )
+
+
+
 
 
 def _get_job_state(account: str, job_id: str) -> tuple[str | None, str]:
